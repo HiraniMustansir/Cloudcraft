@@ -2,10 +2,17 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Bookmark, GitFork, Heart, MessageCircle } from 'lucide-react';
+import {
+  Bookmark,
+  GitFork,
+  Heart,
+  MessageCircle,
+  ShieldCheck,
+} from 'lucide-react';
 import { useAuth } from '@/app/providers';
 import { DiagramPreview } from '@/app/components/diagram-preview';
 import { toggleRelation } from '@/lib/cloudcraft-data';
+import { analyzeArchitecture } from '@/lib/architecture-analysis';
 import type { Architecture } from '@/lib/cloudcraft-types';
 
 const providerTone: Record<string, string> = {
@@ -43,6 +50,11 @@ export function ArchitectureCard({ item }: { item: Architecture }) {
     .map((part) => part[0])
     .slice(0, 2)
     .join('');
+  const analysis = analyzeArchitecture(item.diagram, item.provider, {
+    problem: item.problem,
+    approach: item.approach,
+    tradeoffs: item.tradeoffs,
+  });
 
   return (
     <article className="cc-architecture-card">
@@ -50,6 +62,9 @@ export function ArchitectureCard({ item }: { item: Architecture }) {
         <DiagramPreview diagram={item.diagram} compact />
         <span className={`cc-provider ${providerTone[item.provider]}`}>
           {item.provider}
+        </span>
+        <span className="cc-card-health">
+          <ShieldCheck /> {analysis.score}
         </span>
       </Link>
       <div className="cc-card-body">

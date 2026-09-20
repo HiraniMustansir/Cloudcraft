@@ -22,9 +22,11 @@ import {
   GitPullRequest,
   Globe2,
   GripVertical,
+  Gauge,
   Grid3X3,
   HardDrive,
   Layers3,
+  LayoutTemplate,
   Minus,
   MoveRight,
   MousePointer2,
@@ -69,6 +71,8 @@ import { azureServices } from './azure-services';
 import { gcpServices } from './gcp-services';
 import { hybridServices } from './hybrid-services';
 import type { DiagramDocument, Provider } from '@/lib/cloudcraft-types';
+import { analyzeArchitecture } from '@/lib/architecture-analysis';
+import { getArchitectureTemplates } from '@/lib/architecture-templates';
 import {
   getConnectionGeometry,
   type ConnectionRouting,
@@ -419,12 +423,32 @@ export function ArchitectureEditor({
   const selectedNode = nodes.find((node) => node.id === selected);
   const selectedGroup = groups.find((group) => group.id === selected);
   const selectedConnection = connections.find((line) => line.id === selected);
+  const architectureTemplates = useMemo(
+    () => getArchitectureTemplates(provider),
+    [provider],
+  );
+  const liveAnalysis = useMemo(
+    () => analyzeArchitecture({ nodes, groups, connections }, provider),
+    [connections, groups, nodes, provider],
+  );
 
   const diagram = (): DiagramDocument => ({
     nodes,
     groups,
     connections,
   });
+
+  const applyTemplate = (templateId: string) => {
+    const template = architectureTemplates.find(
+      (candidate) => candidate.id === templateId,
+    );
+    if (!template) return;
+    setNodes(template.diagram.nodes as NodeData[]);
+    setGroups(template.diagram.groups as GroupData[]);
+    setConnections(template.diagram.connections as Connection[]);
+    setSelected('');
+    setSaved(false);
+  };
 
   const persistDiagram = async (publish = false) => {
     setSaving(true);
@@ -818,6 +842,15 @@ export function ArchitectureEditor({
         <div className="editor-spacer" />
         <Button
           variant="outline"
+          onClick={() => {
+            setSelected('');
+            setPropertiesCollapsed(false);
+          }}
+        >
+          <Gauge /> Review {liveAnalysis.score}
+        </Button>
+        <Button
+          variant="outline"
           onClick={() =>
             void navigator.clipboard.writeText(window.location.href)
           }
@@ -1192,19 +1225,34 @@ export function ArchitectureEditor({
           >
             {!nodes.length && !groups.length && (
               <div className="blank-canvas-guide">
-                <SquareDashed />
-                <strong>Start with a blank architecture</strong>
+                <LayoutTemplate />
+                <strong>Start from a cloud reference pattern</strong>
                 <span>
-                  Drag a named section, network boundary, or cloud service here
-                  from the library.
+                  Use a reviewed foundation, then adapt services, boundaries,
+                  and data flows to your workload.
                 </span>
+                <div className="template-quick-grid">
+                  {architectureTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        applyTemplate(template.id);
+                      }}
+                    >
+                      <strong>{template.name}</strong>
+                      <small>{template.outcome}</small>
+                    </button>
+                  ))}
+                </div>
                 <button
+                  className="blank-start-button"
                   onClick={(event) => {
                     event.stopPropagation();
                     setLibraryMode('network');
                   }}
                 >
-                  Open network library
+                  <SquareDashed /> Start blank instead
                 </button>
               </div>
             )}
@@ -1943,10 +1991,46 @@ export function ArchitectureEditor({
             !selectedNode &&
             !selectedGroup &&
             !selectedConnection && (
-              <div className="properties-empty">
-                <MousePointer2 />
-                <strong>Select a canvas item</strong>
-                <span>Edit its name, placement, and connections.</span>
+              <div className="editor-review-panel">
+                <div className="editor-review-score">
+                  <span>{liveAnalysis.score}</span>
+                  <div>
+                    <strong>Architecture review</strong>
+                    <small>{liveAnalysis.status}</small>
+                  </div>
+                </div>
+                <div className="editor-review-metrics">
+                  <span><strong>{liveAnalysis.inventory.services}</strong> services</span>
+                  <span><strong>{liveAnalysis.inventory.connections}</strong> flows</span>
+                  <span><strong>{liveAnalysis.inventory.boundaries}</strong> boundaries</span>
+                </div>
+                <div className="editor-review-pillars">
+                  {liveAnalysis.pillars.map((pillar) => (
+                    <div key={pillar.key}>
+                      <span>{pillar.label}</span>
+                      <i><b style={{ width: `${pillar.score}%` }} /></i>
+                      <strong>{pillar.score}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="editor-review-findings">
+                  <strong>Next improvements</strong>
+                  {liveAnalysis.findings.slice(0, 4).map((finding) => (
+                    <article key={finding.id} className={`severity-${finding.severity}`}>
+                      <span>{finding.severity}</span>
+                      <div>
+                        <strong>{finding.title}</strong>
+                        <small>{finding.recommendation}</small>
+                      </div>
+                    </article>
+                  ))}
+                  {!liveAnalysis.findings.length && (
+                    <p><Check /> No obvious topology gaps detected.</p>
+                  )}
+                </div>
+                <small className="editor-review-note">
+                  Design-time guidance only. Select any canvas item to edit its properties.
+                </small>
               </div>
             )}
           {!propertiesCollapsed && (

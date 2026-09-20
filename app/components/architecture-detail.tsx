@@ -1,20 +1,29 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  AlertTriangle,
   ArrowLeft,
+  BarChart3,
   Bookmark,
   Check,
+  CheckCircle2,
+  CircleDollarSign,
   Cloud,
+  Download,
+  Gauge,
   GitFork,
   GitPullRequest,
   Heart,
+  Layers3,
   MessageCircle,
   Pencil,
   Send,
   Share2,
+  ShieldCheck,
+  XCircle,
 } from 'lucide-react';
 import { AppHeader } from '@/app/components/app-header';
 import { DiagramPreview } from '@/app/components/diagram-preview';
@@ -34,6 +43,7 @@ import {
   toggleFollow,
   toggleRelation,
 } from '@/lib/cloudcraft-data';
+import { analyzeArchitecture } from '@/lib/architecture-analysis';
 import type {
   Architecture,
   ArchitectureComment,
@@ -136,6 +146,17 @@ export function ArchitectureDetail({ id }: { id: string }) {
     );
 
   const isOwner = user?.id === item.author_id;
+  const analysis = analyzeArchitecture(item.diagram, item.provider, {
+    problem: item.problem,
+    approach: item.approach,
+    tradeoffs: item.tradeoffs,
+  });
+  const readinessComplete = analysis.readiness.filter(
+    (check) => check.complete,
+  ).length;
+  const controlsCovered = analysis.controls.filter(
+    (control) => control.covered,
+  ).length;
 
   return (
     <main className="cc-app">
@@ -150,6 +171,7 @@ export function ArchitectureDetail({ id }: { id: string }) {
             <a href="#challenge">The challenge</a>
             <a href="#approach">The approach</a>
             <a href="#architecture">Architecture</a>
+            <a href="#intelligence">Architecture review</a>
             <a href="#collaboration">Collaboration</a>
             <a href="#tradeoffs">Trade-offs</a>
             <a href="#discussion">Discussion</a>
@@ -255,6 +277,194 @@ export function ArchitectureDetail({ id }: { id: string }) {
                 {versions.length ? `v${versions[0].version_number}` : 'v1'}
               </span>
               <span>{versions.length} saved versions</span>
+            </div>
+          </section>
+
+          <section id="intelligence" className="cc-intelligence">
+            <div className="cc-section-heading">
+              <div>
+                <span className="cc-eyebrow">DESIGN-TIME ASSESSMENT</span>
+                <h2>Architecture intelligence</h2>
+              </div>
+              <span
+                className={`cc-assessment-status score-${analysis.status.toLowerCase().replaceAll(' ', '-')}`}
+              >
+                {analysis.status}
+              </span>
+            </div>
+            <p className="cc-intelligence-intro">
+              Automated review based on visible services, boundaries,
+              connections, and documentation. Validate final decisions against
+              provider guidance and workload requirements.
+            </p>
+            <div className="cc-intelligence-overview">
+              <div
+                className="cc-score-ring"
+                style={{ '--score': analysis.score } as CSSProperties}
+              >
+                <strong>{analysis.score}</strong>
+                <span>overall</span>
+              </div>
+              <div className="cc-intelligence-stat">
+                <Layers3 />
+                <strong>{analysis.inventory.services}</strong>
+                <span>cloud services</span>
+              </div>
+              <div className="cc-intelligence-stat">
+                <Gauge />
+                <strong>{analysis.complexity}</strong>
+                <span>complexity</span>
+              </div>
+              <div className="cc-intelligence-stat">
+                <CircleDollarSign />
+                <strong>{analysis.costPressure}</strong>
+                <span>cost pressure</span>
+              </div>
+              <div className="cc-intelligence-stat">
+                <ShieldCheck />
+                <strong>
+                  {controlsCovered}/{analysis.controls.length}
+                </strong>
+                <span>controls visible</span>
+              </div>
+            </div>
+            <div className="cc-pillar-grid">
+              {analysis.pillars.map((pillar) => (
+                <article key={pillar.key}>
+                  <div>
+                    <strong>{pillar.label}</strong>
+                    <span>{pillar.score}</span>
+                  </div>
+                  <i>
+                    <b style={{ width: `${pillar.score}%` }} />
+                  </i>
+                </article>
+              ))}
+            </div>
+            <div className="cc-review-grid">
+              <div className="cc-review-panel">
+                <div className="cc-review-panel-title">
+                  <AlertTriangle />
+                  <div>
+                    <strong>Priority findings</strong>
+                    <span>{analysis.findings.length} design signals</span>
+                  </div>
+                </div>
+                <div className="cc-findings-list">
+                  {analysis.findings.length ? (
+                    analysis.findings.slice(0, 6).map((finding) => (
+                      <article
+                        key={finding.id}
+                        className={`severity-${finding.severity}`}
+                      >
+                        <span>{finding.severity}</span>
+                        <div>
+                          <strong>{finding.title}</strong>
+                          <p>{finding.detail}</p>
+                          <small>{finding.recommendation}</small>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="cc-review-success">
+                      <CheckCircle2 />
+                      <strong>No obvious design gaps detected</strong>
+                      <span>
+                        Continue with workload-specific validation and threat
+                        modeling.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="cc-review-panel">
+                <div className="cc-review-panel-title">
+                  <CheckCircle2 />
+                  <div>
+                    <strong>Deployment readiness</strong>
+                    <span>
+                      {readinessComplete}/{analysis.readiness.length} checks
+                      complete
+                    </span>
+                  </div>
+                </div>
+                <div className="cc-check-list">
+                  {analysis.readiness.map((check) => (
+                    <div
+                      key={check.label}
+                      className={check.complete ? 'complete' : ''}
+                    >
+                      {check.complete ? <CheckCircle2 /> : <XCircle />}
+                      <span>
+                        <strong>{check.label}</strong>
+                        <small>{check.detail}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="cc-review-grid cc-review-grid-secondary">
+              <div className="cc-review-panel">
+                <div className="cc-review-panel-title">
+                  <ShieldCheck />
+                  <div>
+                    <strong>Control coverage</strong>
+                    <span>Evidence visible in the diagram</span>
+                  </div>
+                </div>
+                <div className="cc-control-grid">
+                  {analysis.controls.map((control) => (
+                    <div
+                      key={control.label}
+                      className={control.covered ? 'covered' : ''}
+                    >
+                      {control.covered ? <Check /> : <XCircle />}
+                      <span>
+                        <strong>{control.label}</strong>
+                        <small>{control.evidence}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="cc-review-panel">
+                <div className="cc-review-panel-title">
+                  <BarChart3 />
+                  <div>
+                    <strong>Service inventory</strong>
+                    <span>
+                      {analysis.inventory.providers.join(' + ') ||
+                        item.provider}
+                    </span>
+                  </div>
+                </div>
+                <div className="cc-inventory-summary">
+                  <span>
+                    <strong>{analysis.inventory.connections}</strong> flows
+                  </span>
+                  <span>
+                    <strong>{analysis.inventory.boundaries}</strong> boundaries
+                  </span>
+                  <span>
+                    <strong>{analysis.inventory.connectors}</strong> gateways
+                  </span>
+                  <span>
+                    <strong>{analysis.inventory.disconnected}</strong>{' '}
+                    disconnected
+                  </span>
+                </div>
+                <div className="cc-category-list">
+                  {analysis.inventory.categories
+                    .slice(0, 6)
+                    .map((category) => (
+                      <div key={category.name}>
+                        <span>{category.name}</span>
+                        <strong>{category.count}</strong>
+                      </div>
+                    ))}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -461,11 +671,69 @@ export function ArchitectureDetail({ id }: { id: string }) {
             >
               <Share2 />
             </button>
+            <button
+              aria-label="Download architecture as JSON"
+              title="Download architecture as JSON"
+              onClick={() => {
+                const exportDocument = {
+                  schemaVersion: 1,
+                  exportedAt: new Date().toISOString(),
+                  architecture: {
+                    id: item.id,
+                    title: item.title,
+                    provider: item.provider,
+                    summary: item.summary,
+                    problem: item.problem,
+                    approach: item.approach,
+                    tradeoffs: item.tradeoffs,
+                    tags: item.tags,
+                    diagram: item.diagram,
+                  },
+                  assessment: analysis,
+                };
+                const blob = new Blob(
+                  [JSON.stringify(exportDocument, null, 2)],
+                  { type: 'application/json' },
+                );
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = url;
+                anchor.download = `${item.title.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'architecture'}.json`;
+                document.body.append(anchor);
+                anchor.click();
+                anchor.remove();
+                window.setTimeout(() => URL.revokeObjectURL(url), 0);
+                setNotice('Architecture package downloaded.');
+              }}
+            >
+              <Download />
+            </button>
           </div>
           <div className="cc-health-card">
             <span>ARCHITECTURE HEALTH</span>
-            <strong>Well-documented</strong>
-            <p>Problem, approach, canvas, and trade-offs are available.</p>
+            <div className="cc-health-score-row">
+              <strong>{analysis.score}</strong>
+              <div>
+                <b>{analysis.status}</b>
+                <small>
+                  {
+                    analysis.findings.filter(
+                      (finding) => finding.severity === 'high',
+                    ).length
+                  }{' '}
+                  high-priority findings
+                </small>
+              </div>
+            </div>
+            <div className="cc-health-mini-pillars">
+              {analysis.pillars.slice(0, 4).map((pillar) => (
+                <div key={pillar.key}>
+                  <span>{pillar.label}</span>
+                  <strong>{pillar.score}</strong>
+                </div>
+              ))}
+            </div>
+            <a href="#intelligence">View full assessment</a>
           </div>
           {isOwner && (forks.length > 0 || pullRequests.length > 0) && (
             <div className="cc-pr-card">
