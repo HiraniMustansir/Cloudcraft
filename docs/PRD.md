@@ -107,6 +107,8 @@ Reviews design intent, risk, and evolution without editing every node. Needs cha
 - Save as a new version; show saved/unsaved state.
 - Accessible list representation for users who cannot operate a spatial canvas.
 
+The prototype now includes a searchable catalog of 320 AWS services across 21 categories. Its network library supports VPC and Availability Zone boundaries, public and private subnets, NAT and Internet gateways, route tables, network ACLs, security groups, and VPC endpoints. Services can be dragged into subnet boundaries or assigned from their properties, and connections can be drawn between services and subnets to represent routes such as public subnet → NAT gateway → private subnet.
+
 The reference image informs the MVP’s use of nested account boundaries, labeled horizontal/vertical service lanes, directional connections, and color-coded provider services. The product should preserve those information-design strengths while reducing label density and improving editability.
 
 ### 6.5 Discussion and feedback
