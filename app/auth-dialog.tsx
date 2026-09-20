@@ -53,17 +53,17 @@ export function AuthDialog({ open, onOpenChange, user }: AuthDialogProps) {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             full_name: name.trim(),
-            account_type: 'developer',
+            account_type: 'member',
           },
         },
       });
 
       if (signUpError) setError(signUpError.message);
       else if (data.session) {
-        setMessage('Developer account created. You are now signed in.');
+        setMessage('Account created. You are now signed in.');
         changeOpen(false);
       } else {
-        setMessage('Check your inbox to confirm your developer account.');
+        setMessage('Check your inbox to confirm your account.');
       }
     } else {
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -86,6 +86,7 @@ export function AuthDialog({ open, onOpenChange, user }: AuthDialogProps) {
 
   const displayName =
     (user?.user_metadata.full_name as string | undefined) || user?.email;
+  const isDeveloper = user?.user_metadata.account_type === 'developer';
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
@@ -102,8 +103,14 @@ export function AuthDialog({ open, onOpenChange, user }: AuthDialogProps) {
             <div className="account-status">
               <CheckCircle2 />
               <div>
-                <strong>Developer account</strong>
-                <span>Signed in and ready to publish architectures.</span>
+                <strong>
+                  {isDeveloper ? 'Developer account' : 'Cloudcraft account'}
+                </strong>
+                <span>
+                  {isDeveloper
+                    ? 'Owner account signed in and ready to manage Cloudcraft.'
+                    : 'Signed in and ready to publish and collaborate.'}
+                </span>
               </div>
             </div>
             <Button
@@ -195,7 +202,7 @@ export function AuthDialog({ open, onOpenChange, user }: AuthDialogProps) {
               )}
               <Button type="submit" className="full-button" disabled={pending}>
                 {pending && <Loader2 className="auth-spinner" />}
-                {mode === 'signup' ? 'Create developer account' : 'Sign in'}
+                {mode === 'signup' ? 'Create account' : 'Sign in'}
               </Button>
             </form>
           </>

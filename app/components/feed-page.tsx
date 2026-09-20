@@ -1,13 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Bookmark, Compass, Radio, Search } from 'lucide-react';
+import { Bookmark, Compass, Layers3, Radio, Search, Users } from 'lucide-react';
 import { AppHeader } from '@/app/components/app-header';
 import { ArchitectureCard } from '@/app/components/architecture-card';
 import { useAuth } from '@/app/providers';
-import { listArchitectures } from '@/lib/cloudcraft-data';
-import type { Architecture } from '@/lib/cloudcraft-types';
+import {
+  listArchitectures,
+  listFollowingProfiles,
+} from '@/lib/cloudcraft-data';
+import type { Architecture, FollowedProfile } from '@/lib/cloudcraft-types';
 import { Button } from '@/components/ui/button';
 
 export function FeedPage({
@@ -19,6 +23,9 @@ export function FeedPage({
   const query = params.get('q') ?? '';
   const { user, loading: authLoading, openAuth } = useAuth();
   const [items, setItems] = useState<Architecture[]>([]);
+  const [followingProfiles, setFollowingProfiles] = useState<FollowedProfile[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
 
@@ -27,17 +34,24 @@ export function FeedPage({
     if (authLoading) return;
     if ((mode === 'following' || mode === 'saved') && !user) {
       setItems([]);
+      setFollowingProfiles([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    void listArchitectures({
-      query,
-      followingFor: mode === 'following' ? user?.id : undefined,
-      savedFor: mode === 'saved' ? user?.id : undefined,
-      viewerId: user?.id,
-    }).then((result) => {
+    void Promise.all([
+      listArchitectures({
+        query,
+        followingFor: mode === 'following' ? user?.id : undefined,
+        savedFor: mode === 'saved' ? user?.id : undefined,
+        viewerId: user?.id,
+      }),
+      mode === 'following' && user
+        ? listFollowingProfiles(user.id)
+        : Promise.resolve([]),
+    ]).then(([result, profiles]) => {
       setItems(result.items);
+      setFollowingProfiles(profiles);
       setNeedsSetup(result.needsSetup);
       setLoading(false);
     });
@@ -92,42 +106,109 @@ export function FeedPage({
             </span>
           </div>
         )}
-        {loading ? (
-          <div className="cc-card-grid" aria-label="Loading architectures">
-            {[0, 1, 2].map((item) => (
-              <div className="cc-card-skeleton" key={item} />
-            ))}
-          </div>
-        ) : items.length ? (
-          <div className="cc-card-grid">
-            {items.map((item) => (
-              <ArchitectureCard item={item} key={item.id} />
-            ))}
-          </div>
-        ) : (
-          <div className="cc-empty-state">
-            <Search />
-            <strong>
-              {mode === 'following'
-                ? 'Your following feed is empty'
-                : mode === 'saved'
-                  ? 'Nothing saved yet'
-                  : 'No architectures found'}
-            </strong>
-            <p>
-              {!user && mode !== 'explore'
-                ? 'Sign in to build your personal architecture feed.'
-                : mode === 'following'
-                  ? 'Follow architects from their profile pages to see their work here.'
-                  : mode === 'saved'
-                    ? 'Use the bookmark button on an architecture to add it here.'
-                    : 'Try another service, provider, or architecture pattern.'}
-            </p>
-            {!user && mode !== 'explore' && (
-              <Button onClick={openAuth}>Sign in</Button>
+        <div
+          className={mode === 'following' ? 'cc-following-layout' : undefined}
+        >
+          {mode === 'following' && (
+            <aside className="cc-following-sidebar">
+              <div className="cc-following-sidebar-title">
+                <span>
+                  <Users />
+                </span>
+                <div>
+                  <strong>People you follow</strong>
+                  <small>
+                    {user ? followingProfiles.length : 0} in your network
+                  </small>
+                </div>
+              </div>
+              {authLoading || (user && loading) ? (
+                <div className="cc-following-people-loading">
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              ) : !user ? (
+                <div className="cc-following-people-empty">
+                  <Users />
+                  <span>Sign in to see the people you follow.</span>
+                  <Button size="sm" onClick={openAuth}>
+                    Sign in
+                  </Button>
+                </div>
+              ) : followingProfiles.length ? (
+                <div className="cc-following-people">
+                  {followingProfiles.map((profile) => {
+                    const initials = profile.display_name
+                      .split(' ')
+                      .map((part) => part[0])
+                      .slice(0, 2)
+                      .join('');
+                    return (
+                      <Link
+                        key={profile.id}
+                        href={`/profiles/${profile.username}`}
+                      >
+                        <span className="cc-avatar small">{initials}</span>
+                        <span>
+                          <strong>{profile.display_name}</strong>
+                          <small>{profile.title}</small>
+                          <em>
+                            <Layers3 /> {profile.published_architecture_count}{' '}
+                            published
+                          </em>
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="cc-following-people-empty">
+                  <Users />
+                  <span>People you follow will appear here.</span>
+                </div>
+              )}
+            </aside>
+          )}
+          <div className="cc-following-feed">
+            {loading ? (
+              <div className="cc-card-grid" aria-label="Loading architectures">
+                {[0, 1, 2].map((item) => (
+                  <div className="cc-card-skeleton" key={item} />
+                ))}
+              </div>
+            ) : items.length ? (
+              <div className="cc-card-grid">
+                {items.map((item) => (
+                  <ArchitectureCard item={item} key={item.id} />
+                ))}
+              </div>
+            ) : (
+              <div className="cc-empty-state">
+                <Search />
+                <strong>
+                  {mode === 'following'
+                    ? 'Your following feed is empty'
+                    : mode === 'saved'
+                      ? 'Nothing saved yet'
+                      : 'No architectures found'}
+                </strong>
+                <p>
+                  {!user && mode !== 'explore'
+                    ? 'Sign in to build your personal architecture feed.'
+                    : mode === 'following'
+                      ? 'Follow architects from their profile pages to see their work here.'
+                      : mode === 'saved'
+                        ? 'Use the bookmark button on an architecture to add it here.'
+                        : 'Try another service, provider, or architecture pattern.'}
+                </p>
+                {!user && mode !== 'explore' && (
+                  <Button onClick={openAuth}>Sign in</Button>
+                )}
+              </div>
             )}
           </div>
-        )}
+        </div>
       </section>
     </main>
   );

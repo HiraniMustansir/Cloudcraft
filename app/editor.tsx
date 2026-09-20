@@ -332,8 +332,8 @@ export function ArchitectureEditor({
     'services',
   );
   const [zoom, setZoom] = useState(100);
-  const [libraryWidth, setLibraryWidth] = useState(310);
-  const [propertiesWidth, setPropertiesWidth] = useState(300);
+  const [libraryWidth, setLibraryWidth] = useState(340);
+  const [propertiesWidth, setPropertiesWidth] = useState(330);
   const [libraryCollapsed, setLibraryCollapsed] = useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
   const [saved, setSaved] = useState(true);
@@ -1106,7 +1106,7 @@ export function ArchitectureEditor({
               className="panel-resizer library-resizer"
               aria-label="Resize architecture library"
               title="Drag to resize · Double-click to reset"
-              onDoubleClick={() => setLibraryWidth(310)}
+              onDoubleClick={() => setLibraryWidth(340)}
               onPointerDown={(event) => {
                 panelResizeRef.current = {
                   side: 'library',
@@ -1955,7 +1955,7 @@ export function ArchitectureEditor({
               className="panel-resizer properties-resizer"
               aria-label="Resize properties panel"
               title="Drag to resize · Double-click to reset"
-              onDoubleClick={() => setPropertiesWidth(300)}
+              onDoubleClick={() => setPropertiesWidth(330)}
               onPointerDown={(event) => {
                 panelResizeRef.current = {
                   side: 'properties',

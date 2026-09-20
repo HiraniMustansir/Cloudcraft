@@ -225,6 +225,7 @@ export function DiagramPreview({
         return (
           <div
             key={node.id}
+            title={`${node.provider ? `${node.provider} · ` : ''}${node.label}`}
             className={`diagram-renderer-node ${node.role === 'connector' ? `network-connector connector-${node.connectorKind ?? 'routing'}` : ''}`}
             style={{
               left: `${node.x}%`,

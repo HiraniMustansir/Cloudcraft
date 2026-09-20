@@ -6,7 +6,10 @@ import {
   type ArchitectureComment,
   type ArchitectureFork,
   type ArchitectureVersion,
+  type ContributionActivity,
+  type FollowedProfile,
   type Profile,
+  type ProfileStats,
   type Provider,
   type PullRequest,
 } from '@/lib/cloudcraft-types';
@@ -500,28 +503,155 @@ export async function getFollowState(followerId: string, followingId: string) {
   return Boolean(data);
 }
 
-export async function getProfileStats(profileId: string) {
+export async function listFollowingProfiles(
+  followerId: string,
+): Promise<FollowedProfile[]> {
   const supabase = createClient();
-  const [architectures, followers, following] = await Promise.all([
+  const { data: follows, error } = await supabase
+    .from('follows')
+    .select('following_id,created_at')
+    .eq('follower_id', followerId)
+    .order('created_at', { ascending: false });
+  if (error || !follows?.length) return [];
+
+  const profileIds = follows.map((follow) => follow.following_id as string);
+  const [{ data: profiles }, { data: architectures }] = await Promise.all([
+    supabase.from('profiles').select('*').in('id', profileIds),
     supabase
       .from('architectures')
-      .select('id', { count: 'exact', head: true })
-      .eq('author_id', profileId)
+      .select('author_id')
+      .in('author_id', profileIds)
       .eq('status', 'published'),
-    supabase
-      .from('follows')
-      .select('follower_id', { count: 'exact', head: true })
-      .eq('following_id', profileId),
-    supabase
-      .from('follows')
-      .select('following_id', { count: 'exact', head: true })
-      .eq('follower_id', profileId),
   ]);
+  const profileById = new Map(
+    ((profiles ?? []) as Profile[]).map((profile) => [profile.id, profile]),
+  );
+
+  return follows.flatMap((follow) => {
+    const profile = profileById.get(follow.following_id as string);
+    if (!profile) return [];
+    return [
+      {
+        ...profile,
+        followed_at: follow.created_at as string,
+        published_architecture_count: (architectures ?? []).filter(
+          (architecture) => architecture.author_id === profile.id,
+        ).length,
+      },
+    ];
+  });
+}
+
+export async function getProfileStats(
+  profileId: string,
+): Promise<ProfileStats> {
+  const supabase = createClient();
+  const [architectures, followers, following, forks, pullRequests] =
+    await Promise.all([
+      supabase
+        .from('architectures')
+        .select('id,status')
+        .eq('author_id', profileId),
+      supabase
+        .from('follows')
+        .select('follower_id', { count: 'exact', head: true })
+        .eq('following_id', profileId),
+      supabase
+        .from('follows')
+        .select('following_id', { count: 'exact', head: true })
+        .eq('follower_id', profileId),
+      supabase
+        .from('architecture_forks')
+        .select('fork_architecture_id', { count: 'exact', head: true })
+        .eq('author_id', profileId),
+      supabase
+        .from('pull_requests')
+        .select('id,status')
+        .eq('author_id', profileId),
+    ]);
+
+  const visibleArchitectures = architectures.data ?? [];
+  const architectureIds = visibleArchitectures.map((item) => item.id);
+  const [likes, comments] = architectureIds.length
+    ? await Promise.all([
+        supabase
+          .from('likes')
+          .select('architecture_id', { count: 'exact', head: true })
+          .in('architecture_id', architectureIds),
+        supabase
+          .from('comments')
+          .select('architecture_id', { count: 'exact', head: true })
+          .in('architecture_id', architectureIds),
+      ])
+    : [{ count: 0 }, { count: 0 }];
+  const requests = pullRequests.data ?? [];
+
   return {
-    architectures: architectures.count ?? 0,
+    architectures: visibleArchitectures.filter(
+      (item) => item.status === 'published',
+    ).length,
+    drafts: visibleArchitectures.filter((item) => item.status === 'draft')
+      .length,
     followers: followers.count ?? 0,
     following: following.count ?? 0,
+    forksCreated: forks.count ?? 0,
+    pullRequests: requests.length,
+    mergedContributions: requests.filter((item) => item.status === 'approved')
+      .length,
+    openContributions: requests.filter((item) => item.status === 'open').length,
+    rejectedContributions: requests.filter((item) => item.status === 'rejected')
+      .length,
+    likesReceived: likes.count ?? 0,
+    commentsReceived: comments.count ?? 0,
   };
+}
+
+export async function listProfileContributions(
+  profileId: string,
+): Promise<ContributionActivity[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('pull_requests')
+    .select(
+      'id,title,status,source_architecture_id,target_architecture_id,created_at,updated_at',
+    )
+    .eq('author_id', profileId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error || !data?.length) return [];
+
+  const architectureIds = Array.from(
+    new Set(
+      data.flatMap((request) => [
+        request.source_architecture_id,
+        request.target_architecture_id,
+      ]),
+    ),
+  );
+  const { data: architectures } = await supabase
+    .from('architectures')
+    .select('id,title')
+    .in('id', architectureIds);
+  const titles = new Map(
+    (architectures ?? []).map((architecture) => [
+      architecture.id,
+      architecture.title,
+    ]),
+  );
+
+  return data.map((request) => ({
+    id: request.id,
+    title: request.title,
+    status: request.status as PullRequest['status'],
+    sourceArchitectureId: request.source_architecture_id,
+    sourceArchitectureTitle:
+      titles.get(request.source_architecture_id) ?? 'Forked architecture',
+    targetArchitectureId: request.target_architecture_id,
+    targetArchitectureTitle:
+      titles.get(request.target_architecture_id) ?? 'Original architecture',
+    createdAt: request.created_at,
+    updatedAt: request.updated_at,
+  }));
 }
 
 export async function updateProfile(profile: Profile) {

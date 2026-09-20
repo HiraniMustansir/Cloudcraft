@@ -2,7 +2,20 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Check, MapPin, Pencil, UserPlus } from 'lucide-react';
+import {
+  Check,
+  CheckCircle2,
+  Clock3,
+  GitFork,
+  GitPullRequest,
+  Heart,
+  Layers3,
+  MapPin,
+  MessageCircle,
+  Pencil,
+  UserPlus,
+  XCircle,
+} from 'lucide-react';
 import { AppHeader } from '@/app/components/app-header';
 import { ArchitectureCard } from '@/app/components/architecture-card';
 import { useAuth } from '@/app/providers';
@@ -13,11 +26,31 @@ import {
   getFollowState,
   getProfile,
   getProfileStats,
+  listProfileContributions,
   listArchitectures,
   toggleFollow,
   updateProfile,
 } from '@/lib/cloudcraft-data';
-import type { Architecture, Profile } from '@/lib/cloudcraft-types';
+import type {
+  Architecture,
+  ContributionActivity,
+  Profile,
+  ProfileStats,
+} from '@/lib/cloudcraft-types';
+
+const emptyStats: ProfileStats = {
+  architectures: 0,
+  drafts: 0,
+  followers: 0,
+  following: 0,
+  forksCreated: 0,
+  pullRequests: 0,
+  mergedContributions: 0,
+  openContributions: 0,
+  rejectedContributions: 0,
+  likesReceived: 0,
+  commentsReceived: 0,
+};
 
 export function ProfileView({ username }: { username?: string }) {
   const {
@@ -30,11 +63,10 @@ export function ProfileView({ username }: { username?: string }) {
   const [viewedProfile, setViewedProfile] = useState<Profile | null>(null);
   const [draftProfile, setDraftProfile] = useState<Profile | null>(null);
   const [items, setItems] = useState<Architecture[]>([]);
-  const [stats, setStats] = useState({
-    architectures: 0,
-    followers: 0,
-    following: 0,
-  });
+  const [stats, setStats] = useState<ProfileStats>(emptyStats);
+  const [contributions, setContributions] = useState<ContributionActivity[]>(
+    [],
+  );
   const [following, setFollowing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -46,15 +78,17 @@ export function ProfileView({ username }: { username?: string }) {
     setViewedProfile(nextProfile);
     setDraftProfile(nextProfile);
     if (nextProfile) {
-      const [architectures, nextStats] = await Promise.all([
+      const [architectures, nextStats, nextContributions] = await Promise.all([
         listArchitectures({
           authorId: nextProfile.id,
           includeDrafts: user?.id === nextProfile.id,
         }),
         getProfileStats(nextProfile.id),
+        listProfileContributions(nextProfile.id),
       ]);
       setItems(architectures.items);
       setStats(nextStats);
+      setContributions(nextContributions);
       if (user && user.id !== nextProfile.id)
         setFollowing(await getFollowState(user.id, nextProfile.id));
     }
@@ -94,6 +128,64 @@ export function ProfileView({ username }: { username?: string }) {
     .map((part) => part[0])
     .slice(0, 2)
     .join('');
+  const contributionCards = [
+    {
+      label: 'Published',
+      value: stats.architectures,
+      detail: 'Public architectures',
+      icon: Layers3,
+    },
+    ...(isOwner
+      ? [
+          {
+            label: 'Drafts',
+            value: stats.drafts,
+            detail: 'Private work in progress',
+            icon: Pencil,
+          },
+        ]
+      : []),
+    {
+      label: 'Forks',
+      value: stats.forksCreated,
+      detail: 'Architectures forked',
+      icon: GitFork,
+    },
+    {
+      label: 'Pull requests',
+      value: stats.pullRequests,
+      detail: 'Contributions proposed',
+      icon: GitPullRequest,
+    },
+    {
+      label: 'Merged',
+      value: stats.mergedContributions,
+      detail: 'Accepted contributions',
+      icon: CheckCircle2,
+    },
+    ...(isOwner
+      ? [
+          {
+            label: 'In review',
+            value: stats.openContributions,
+            detail: 'Awaiting a decision',
+            icon: Clock3,
+          },
+        ]
+      : []),
+    {
+      label: 'Likes',
+      value: stats.likesReceived,
+      detail: 'Received on your work',
+      icon: Heart,
+    },
+    {
+      label: 'Comments',
+      value: stats.commentsReceived,
+      detail: 'Discussion on your work',
+      icon: MessageCircle,
+    },
+  ];
 
   return (
     <main className="cc-app">
@@ -255,6 +347,80 @@ export function ProfileView({ username }: { username?: string }) {
                 </div>
               </form>
             )}
+            <section className="cc-contribution-dashboard">
+              <div className="cc-section-heading">
+                <div>
+                  <span className="cc-eyebrow">IMPACT</span>
+                  <h2>Contribution overview</h2>
+                </div>
+                {stats.pullRequests > 0 && (
+                  <span className="cc-merge-rate">
+                    {Math.round(
+                      (stats.mergedContributions / stats.pullRequests) * 100,
+                    )}
+                    % merge rate
+                  </span>
+                )}
+              </div>
+              <div className="cc-contribution-stats">
+                {contributionCards.map((card) => {
+                  const Icon = card.icon;
+                  return (
+                    <article key={card.label}>
+                      <span>
+                        <Icon />
+                      </span>
+                      <strong>{card.value}</strong>
+                      <b>{card.label}</b>
+                      <small>{card.detail}</small>
+                    </article>
+                  );
+                })}
+              </div>
+              {isOwner && stats.rejectedContributions > 0 && (
+                <p className="cc-contribution-note">
+                  <XCircle /> {stats.rejectedContributions} contribution
+                  {stats.rejectedContributions === 1 ? '' : 's'} declined
+                </p>
+              )}
+              {contributions.length > 0 && (
+                <div className="cc-contribution-activity">
+                  <strong>Recent pull requests</strong>
+                  {contributions.map((contribution) => (
+                    <Link
+                      key={contribution.id}
+                      href={`/architectures/${contribution.targetArchitectureId}`}
+                    >
+                      <span
+                        className={`cc-contribution-status ${contribution.status}`}
+                      >
+                        {contribution.status === 'approved' ? (
+                          <CheckCircle2 />
+                        ) : contribution.status === 'open' ? (
+                          <Clock3 />
+                        ) : (
+                          <XCircle />
+                        )}
+                      </span>
+                      <span>
+                        <b>{contribution.title}</b>
+                        <small>
+                          {contribution.sourceArchitectureTitle} →{' '}
+                          {contribution.targetArchitectureTitle}
+                        </small>
+                      </span>
+                      <em className={contribution.status}>
+                        {contribution.status === 'approved'
+                          ? 'Merged'
+                          : contribution.status === 'open'
+                            ? 'In review'
+                            : 'Declined'}
+                      </em>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
             <div className="cc-section-heading cc-profile-heading">
               <div>
                 <span className="cc-eyebrow">

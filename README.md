@@ -27,10 +27,14 @@ New accounts created through the app are tagged with `account_type: developer` i
 ### Create the application database
 
 1. Open **Supabase Dashboard → SQL Editor → New query**.
-2. Copy the complete contents of `supabase/migrations/001_cloudcraft.sql`.
-3. Paste it into the query editor and choose **Run**.
+2. Run every SQL file in `supabase/migrations` in numeric order.
+3. For an existing database, run only the migration files that have not
+   already been applied.
 
-The migration creates profiles, architectures, version history, follows, bookmarks, likes, comments, and pull requests. It also enables Row Level Security so public content is readable while changes remain restricted to their owners. Existing Auth users are automatically given profiles.
+The migrations create profiles, architectures, version history, follows,
+bookmarks, likes, comments, pull requests, and collaboration activity. They
+also enable Row Level Security and restrict internal trigger functions from
+being invoked through the public Data API.
 
 After running it, restart the local app:
 

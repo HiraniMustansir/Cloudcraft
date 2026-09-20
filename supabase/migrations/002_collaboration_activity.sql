@@ -50,6 +50,10 @@ begin
 end;
 $$;
 
+-- Trigger-only function: prevent direct execution through the Data API.
+revoke execute on function public.track_architecture_fork() from public;
+revoke execute on function public.track_architecture_fork() from anon, authenticated;
+
 drop trigger if exists on_architecture_fork_created on public.architectures;
 create trigger on_architecture_fork_created
 after insert on public.architectures
