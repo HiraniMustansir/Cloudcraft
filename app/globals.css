@@ -1539,6 +1539,7 @@ button {
   border: 1px dashed #a7b3b8;
   border-radius: 10px;
   background: rgb(255 255 255 / 48%);
+  cursor: move;
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
@@ -1777,6 +1778,7 @@ button {
 .group-label {
   touch-action: none;
   cursor: grab;
+  user-select: none;
 }
 .blank-canvas-guide {
   position: absolute;
@@ -1890,6 +1892,67 @@ button {
 .connection-endpoints svg {
   width: 13px;
   color: #175f52;
+}
+
+.properties-panel {
+  overflow-y: auto;
+}
+.group-drag-icon {
+  width: 12px;
+  flex: 0 0 auto;
+  color: #8b969b;
+}
+.group-resize-handle,
+.node-resize-handle {
+  position: absolute;
+  z-index: 12;
+  right: -6px;
+  bottom: -6px;
+  width: 15px;
+  height: 15px;
+  border: 2px solid white;
+  border-radius: 4px;
+  background: #175f52;
+  box-shadow: 0 1px 5px rgb(20 42 37 / 28%);
+  touch-action: none;
+  cursor: nwse-resize;
+}
+.group-resize-handle::before,
+.node-resize-handle::before {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid white;
+  border-bottom: 1px solid white;
+  content: '';
+}
+.node-resize-handle {
+  right: 0;
+  bottom: 0;
+}
+.size-control {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 2px 0 16px;
+  border-top: 1px solid #e4e8e9;
+  padding-top: 14px;
+}
+.size-control > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #4c575c;
+  font-size: 10px;
+}
+.size-control > div span {
+  color: #838c91;
+  font-variant-numeric: tabular-nums;
+}
+.delete-button {
+  margin-top: 8px;
 }
 
 .dark {

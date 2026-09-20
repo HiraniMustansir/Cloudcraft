@@ -14,6 +14,7 @@ import {
   Database,
   GitPullRequest,
   Globe2,
+  GripVertical,
   Grid3X3,
   HardDrive,
   Layers3,
@@ -46,6 +47,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Slider } from '@/components/ui/slider';
 import {
   awsCategories,
   awsServices,
@@ -58,6 +60,7 @@ type NodeData = CloudService & {
   x: number;
   y: number;
   subnetId?: string;
+  size: number;
 };
 type GroupType = 'vpc' | 'az' | 'public-subnet' | 'private-subnet';
 type GroupData = {
@@ -212,6 +215,14 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
     offsetX: number;
     offsetY: number;
   } | null>(null);
+  const resizeRef = useRef<{
+    kind: 'group' | 'node';
+    id: string;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
 
   const visibleServices = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -257,7 +268,14 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
         );
       setNodes((old) => [
         ...old,
-        { ...service, id, x: target.x, y: target.y, subnetId: subnet?.id },
+        {
+          ...service,
+          id,
+          x: target.x,
+          y: target.y,
+          subnetId: subnet?.id,
+          size: 100,
+        },
       ]);
       setSelected(id);
       setSaved(false);
@@ -316,6 +334,50 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
           : group,
       ),
     );
+    setSaved(false);
+  };
+
+  const resizeSelection = (clientX: number, clientY: number) => {
+    const resize = resizeRef.current;
+    if (!resize) return;
+    if (resize.kind === 'group') {
+      const point = canvasPoint(clientX, clientY);
+      setGroups((old) =>
+        old.map((group) =>
+          group.id === resize.id
+            ? {
+                ...group,
+                w: Math.max(
+                  12,
+                  Math.min(
+                    100 - group.x,
+                    resize.startW + point.x - resize.startX,
+                  ),
+                ),
+                h: Math.max(
+                  10,
+                  Math.min(
+                    100 - group.y,
+                    resize.startH + point.y - resize.startY,
+                  ),
+                ),
+              }
+            : group,
+        ),
+      );
+    } else {
+      const delta = Math.max(clientX - resize.startX, clientY - resize.startY);
+      setNodes((old) =>
+        old.map((node) =>
+          node.id === resize.id
+            ? {
+                ...node,
+                size: Math.max(60, Math.min(180, resize.startW + delta)),
+              }
+            : node,
+        ),
+      );
+    }
     setSaved(false);
   };
 
@@ -793,12 +855,33 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                     width: `${group.w}%`,
                     height: `${group.h}%`,
                   }}
+                  onPointerDown={(event) => {
+                    if (connectMode || event.target !== event.currentTarget)
+                      return;
+                    event.preventDefault();
+                    const point = canvasPoint(event.clientX, event.clientY);
+                    groupDragRef.current = {
+                      id: group.id,
+                      offsetX: point.x - group.x,
+                      offsetY: point.y - group.y,
+                    };
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    setSelected(group.id);
+                  }}
+                  onPointerMove={(event) => {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId))
+                      moveGroup(group.id, event.clientX, event.clientY);
+                  }}
+                  onPointerUp={() => {
+                    groupDragRef.current = null;
+                  }}
                 >
                   <button
                     type="button"
                     className="group-label"
                     onPointerDown={(event) => {
                       if (connectMode) return;
+                      event.preventDefault();
                       const point = canvasPoint(event.clientX, event.clientY);
                       groupDragRef.current = {
                         id: group.id,
@@ -817,11 +900,15 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                     onPointerUp={() => {
                       groupDragRef.current = null;
                     }}
+                    onPointerCancel={() => {
+                      groupDragRef.current = null;
+                    }}
                     onClick={(event) => {
                       event.stopPropagation();
                       connectEndpoint(group.id);
                     }}
                   >
+                    <GripVertical className="group-drag-icon" />
                     <span className="group-icon">
                       {group.type === 'public-subnet' ? (
                         <Globe2 />
@@ -841,6 +928,36 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                       />
                     )}
                   </button>
+                  {selected === group.id && (
+                    <button
+                      type="button"
+                      className="group-resize-handle"
+                      aria-label={`Resize ${group.label}`}
+                      title="Drag to resize"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        const point = canvasPoint(event.clientX, event.clientY);
+                        resizeRef.current = {
+                          kind: 'group',
+                          id: group.id,
+                          startX: point.x,
+                          startY: point.y,
+                          startW: group.w,
+                          startH: group.h,
+                        };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                      onPointerMove={(event) => {
+                        if (
+                          event.currentTarget.hasPointerCapture(event.pointerId)
+                        )
+                          resizeSelection(event.clientX, event.clientY);
+                      }}
+                      onPointerUp={() => {
+                        resizeRef.current = null;
+                      }}
+                    />
+                  )}
                 </div>
               ))}
             {nodes.map((node) => {
@@ -850,7 +967,11 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 <button
                   key={node.id}
                   className={`editor-node ${selected === node.id ? 'selected' : ''} ${connectionStart === node.id ? 'connection-source' : ''}`}
-                  style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                  style={{
+                    left: `${node.x}%`,
+                    top: `${node.y}%`,
+                    width: `${96 * (node.size / 100)}px`,
+                  }}
                   onClick={(event) => {
                     event.stopPropagation();
                     connectEndpoint(node.id);
@@ -866,10 +987,18 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   }}
                   onPointerUp={() => settleNode(node.id)}
                 >
-                  <span className={`service-icon ${node.tone}`}>
+                  <span
+                    className={`service-icon ${node.tone}`}
+                    style={{
+                      width: `${48 * (node.size / 100)}px`,
+                      height: `${48 * (node.size / 100)}px`,
+                    }}
+                  >
                     <Icon />
                   </span>
-                  <strong>{node.label}</strong>
+                  <strong style={{ fontSize: `${10 * (node.size / 100)}px` }}>
+                    {node.label}
+                  </strong>
                   <small>
                     {subnet
                       ? subnet.type === 'private-subnet'
@@ -877,6 +1006,35 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                         : 'Public'
                       : node.category}
                   </small>
+                  {selected === node.id && (
+                    <span
+                      className="node-resize-handle"
+                      aria-hidden="true"
+                      title="Drag to resize"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        resizeRef.current = {
+                          kind: 'node',
+                          id: node.id,
+                          startX: event.clientX,
+                          startY: event.clientY,
+                          startW: node.size,
+                          startH: node.size,
+                        };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                      onPointerMove={(event) => {
+                        if (
+                          event.currentTarget.hasPointerCapture(event.pointerId)
+                        )
+                          resizeSelection(event.clientX, event.clientY);
+                      }}
+                      onPointerUp={(event) => {
+                        event.stopPropagation();
+                        resizeRef.current = null;
+                      }}
+                    />
+                  )}
                 </button>
               );
             })}
@@ -1000,8 +1158,39 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   defaultValue="Architecture component for the production workload."
                 />
               </label>
+              <div className="size-control">
+                <div>
+                  <strong>Service size</strong>
+                  <span>{Math.round(selectedNode.size)}%</span>
+                </div>
+                <Slider
+                  value={[selectedNode.size]}
+                  min={60}
+                  max={180}
+                  step={5}
+                  onValueChange={(value) => {
+                    const nextSize =
+                      typeof value === 'number' ? value : value[0];
+                    setNodes((old) =>
+                      old.map((node) =>
+                        node.id === selectedNode.id
+                          ? { ...node, size: nextSize }
+                          : node,
+                      ),
+                    );
+                    setSaved(false);
+                  }}
+                />
+              </div>
               <Button onClick={() => setSaved(true)} className="full-button">
                 <Save /> Save version
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={removeSelected}
+                className="full-button delete-button"
+              >
+                <Trash2 /> Delete service
               </Button>
             </div>
           )}
@@ -1052,6 +1241,52 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   </span>
                 )}
               </div>
+              <div className="size-control">
+                <div>
+                  <strong>Width</strong>
+                  <span>{Math.round(selectedGroup.w)}%</span>
+                </div>
+                <Slider
+                  value={[selectedGroup.w]}
+                  min={12}
+                  max={Math.max(12, 100 - selectedGroup.x)}
+                  step={1}
+                  onValueChange={(value) => {
+                    const nextWidth =
+                      typeof value === 'number' ? value : value[0];
+                    setGroups((old) =>
+                      old.map((group) =>
+                        group.id === selectedGroup.id
+                          ? { ...group, w: nextWidth }
+                          : group,
+                      ),
+                    );
+                    setSaved(false);
+                  }}
+                />
+                <div>
+                  <strong>Height</strong>
+                  <span>{Math.round(selectedGroup.h)}%</span>
+                </div>
+                <Slider
+                  value={[selectedGroup.h]}
+                  min={10}
+                  max={Math.max(10, 100 - selectedGroup.y)}
+                  step={1}
+                  onValueChange={(value) => {
+                    const nextHeight =
+                      typeof value === 'number' ? value : value[0];
+                    setGroups((old) =>
+                      old.map((group) =>
+                        group.id === selectedGroup.id
+                          ? { ...group, h: nextHeight }
+                          : group,
+                      ),
+                    );
+                    setSaved(false);
+                  }}
+                />
+              </div>
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1061,6 +1296,13 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 className="full-button"
               >
                 <Share2 /> Start connection here
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={removeSelected}
+                className="full-button delete-button"
+              >
+                <Trash2 /> Delete {selectedGroup.type.replace('-', ' ')}
               </Button>
             </div>
           )}
@@ -1152,6 +1394,13 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 }}
               >
                 <ArrowRightLeft /> Reverse direction
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={removeSelected}
+                className="full-button delete-button"
+              >
+                <Trash2 /> Delete connection
               </Button>
             </div>
           )}
