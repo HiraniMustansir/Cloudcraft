@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3001](http://localhost:3001).
 
 ## Supabase email authentication
 
@@ -19,7 +19,7 @@ Copy `.env.example` to `.env.local` and add the project URL and publishable key.
 
 In Supabase, open **Authentication → URL Configuration** and add:
 
-- `http://localhost:3000/auth/callback`
+- `http://localhost:3001/auth/callback`
 - `https://your-vercel-domain.vercel.app/auth/callback`
 
 New accounts created through the app are tagged with `account_type: developer` in Supabase Auth user metadata.
