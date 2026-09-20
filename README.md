@@ -13,6 +13,17 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Supabase email authentication
+
+Copy `.env.example` to `.env.local` and add the project URL and publishable key. The local credentials are already configured in this checkout.
+
+In Supabase, open **Authentication → URL Configuration** and add:
+
+- `http://localhost:3000/auth/callback`
+- `https://your-vercel-domain.vercel.app/auth/callback`
+
+New accounts created through the app are tagged with `account_type: developer` in Supabase Auth user metadata.
+
 To test the production build locally:
 
 ```bash
@@ -26,7 +37,8 @@ npm start
 
 1. Push this folder to a GitHub, GitLab, or Bitbucket repository.
 2. In Vercel, choose **Add New → Project** and import the repository.
-3. Keep the detected framework as **Next.js** and deploy. No environment variables are required for this prototype.
+3. Keep the detected framework as **Next.js**.
+4. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the Vercel project environment variables, then deploy.
 
 ### Vercel CLI
 

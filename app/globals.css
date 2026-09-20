@@ -229,6 +229,111 @@ button {
 .avatar.coral {
   background: #cf765f;
 }
+.account-avatar {
+  border: 0;
+}
+.account-avatar.guest {
+  background: #eef4f2;
+  color: #175f52;
+}
+.account-avatar svg {
+  width: 16px;
+}
+.auth-dialog {
+  max-width: 420px;
+  gap: 18px;
+  padding: 24px;
+}
+.auth-dialog [data-slot='dialog-header'] {
+  align-items: center;
+  text-align: center;
+}
+.auth-mark {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  place-items: center;
+  border-radius: 12px;
+  background: #e8f3ef;
+  color: #175f52;
+}
+.auth-mark svg {
+  width: 22px;
+}
+.auth-tabs [data-slot='tabs-list'] {
+  width: 100%;
+  background: #f0f3f3;
+}
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  color: #39434a;
+  font-size: 13px;
+  font-weight: 650;
+}
+.auth-form input {
+  height: 42px;
+  font-size: 14px;
+}
+.auth-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.auth-feedback.error {
+  background: #fff0ee;
+  color: #a43f33;
+}
+.auth-feedback.success {
+  background: #eaf6f1;
+  color: #17624f;
+}
+.auth-feedback svg {
+  width: 16px;
+  flex: 0 0 auto;
+}
+.auth-spinner {
+  animation: auth-spin 800ms linear infinite;
+}
+.account-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8e8e2;
+  border-radius: 10px;
+  background: #f3f8f6;
+  padding: 12px;
+  color: #17624f;
+}
+.account-status > svg {
+  width: 20px;
+}
+.account-status div {
+  display: grid;
+  gap: 2px;
+}
+.account-status strong {
+  font-size: 13px;
+}
+.account-status span {
+  color: #63726d;
+  font-size: 12px;
+}
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .page-shell {
   max-width: 1480px;
   margin: 0 auto;
