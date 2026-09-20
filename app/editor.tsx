@@ -62,7 +62,8 @@ type NodeData = CloudService & {
   subnetId?: string;
   size: number;
 };
-type GroupType = 'vpc' | 'az' | 'public-subnet' | 'private-subnet';
+type GroupType = 'section' | 'vpc' | 'az' | 'public-subnet' | 'private-subnet';
+type SectionTheme = 'neutral' | 'blue' | 'green' | 'amber' | 'purple';
 type GroupData = {
   id: string;
   label: string;
@@ -71,6 +72,7 @@ type GroupData = {
   y: number;
   w: number;
   h: number;
+  theme: SectionTheme;
 };
 type ConnectionKind =
   | 'data'
@@ -79,6 +81,8 @@ type ConnectionKind =
   | 'peering'
   | 'transit'
   | 'direct-connect'
+  | 'vpc-endpoint'
+  | 'internet-gateway'
   | 'internet'
   | 'custom';
 type Connection = {
@@ -96,6 +100,8 @@ const connectionKinds: Array<{ value: ConnectionKind; label: string }> = [
   { value: 'peering', label: 'VPC peering' },
   { value: 'transit', label: 'Transit Gateway route' },
   { value: 'direct-connect', label: 'Direct Connect' },
+  { value: 'vpc-endpoint', label: 'VPC Endpoint' },
+  { value: 'internet-gateway', label: 'Internet Gateway path' },
   { value: 'internet', label: 'Internet route' },
   { value: 'custom', label: 'Custom connection' },
 ];
@@ -116,6 +122,13 @@ const iconMap: Record<ServiceIcon, typeof Cpu> = {
 };
 
 const infrastructure: Array<CloudService & { structure?: GroupType }> = [
+  {
+    label: 'Named Section',
+    category: 'Custom service group',
+    icon: 'management',
+    tone: 'slate',
+    structure: 'section',
+  },
   {
     label: 'VPC',
     category: 'Network boundary',
@@ -174,6 +187,24 @@ const infrastructure: Array<CloudService & { structure?: GroupType }> = [
     category: 'Networking',
     icon: 'network',
     tone: 'purple',
+  },
+  {
+    label: 'Customer / Web Browser',
+    category: 'Workflow actor',
+    icon: 'business',
+    tone: 'slate',
+  },
+  {
+    label: 'External System',
+    category: 'Workflow actor',
+    icon: 'integration',
+    tone: 'slate',
+  },
+  {
+    label: 'Email Recipient',
+    category: 'Workflow outcome',
+    icon: 'business',
+    tone: 'green',
   },
 ];
 
@@ -256,16 +287,15 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
         x: 35 + (nodes.length % 5) * 11,
         y: 35 + Math.floor(nodes.length / 5) * 15,
       };
-      const subnet = groups
-        .filter((item) => item.type.includes('subnet'))
-        .reverse()
-        .find(
+      const placement = groups
+        .filter(
           (item) =>
             target.x >= item.x &&
             target.x <= item.x + item.w &&
             target.y >= item.y &&
             target.y <= item.y + item.h,
-        );
+        )
+        .sort((a, b) => a.w * a.h - b.w * b.h)[0];
       setNodes((old) => [
         ...old,
         {
@@ -273,7 +303,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
           id,
           x: target.x,
           y: target.y,
-          subnetId: subnet?.id,
+          subnetId: placement?.id,
           size: 100,
         },
       ]);
@@ -293,6 +323,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
     ).length;
     const id = `${item.structure}-${groups.length + 1}`;
     const isSubnet = item.structure.includes('subnet');
+    const isSection = item.structure === 'section';
     const target = point ?? {
       x: 48 + (sameType % 3) * 5,
       y: 46 + (sameType % 3) * 5,
@@ -302,17 +333,40 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
       {
         id,
         type: item.structure!,
-        label: `${item.label} ${sameType + 1}`,
+        label: isSection
+          ? `Service section ${sameType + 1}`
+          : `${item.label} ${sameType + 1}`,
         x: Math.max(
           1,
-          target.x - (isSubnet ? 18 : item.structure === 'az' ? 32 : 38),
+          target.x -
+            (isSubnet
+              ? 18
+              : isSection
+                ? 17
+                : item.structure === 'az'
+                  ? 32
+                  : 38),
         ),
         y: Math.max(
           3,
-          target.y - (isSubnet ? 10 : item.structure === 'az' ? 24 : 30),
+          target.y -
+            (isSubnet
+              ? 10
+              : isSection
+                ? 17
+                : item.structure === 'az'
+                  ? 24
+                  : 30),
         ),
-        w: isSubnet ? 36 : item.structure === 'az' ? 64 : 76,
-        h: isSubnet ? 22 : item.structure === 'az' ? 48 : 60,
+        w: isSubnet ? 36 : isSection ? 34 : item.structure === 'az' ? 64 : 76,
+        h: isSubnet ? 22 : isSection ? 34 : item.structure === 'az' ? 48 : 60,
+        theme: isSection
+          ? 'neutral'
+          : item.structure === 'private-subnet'
+            ? 'green'
+            : item.structure === 'public-subnet'
+              ? 'blue'
+              : 'neutral',
       },
     ]);
     setSelected(id);
@@ -454,17 +508,16 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
     setNodes((old) =>
       old.map((node) => {
         if (node.id !== id) return node;
-        const subnet = groups
-          .filter((group) => group.type.includes('subnet'))
-          .reverse()
-          .find(
+        const placement = groups
+          .filter(
             (group) =>
               node.x >= group.x &&
               node.x <= group.x + group.w &&
               node.y >= group.y &&
               node.y <= group.y + group.h,
-          );
-        return { ...node, subnetId: subnet?.id };
+          )
+          .sort((a, b) => a.w * a.h - b.w * b.h)[0];
+        return { ...node, subnetId: placement?.id };
       }),
     );
   };
@@ -686,8 +739,9 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <p className="network-help">
-                Add boundaries first, then place services inside them. Use
-                Connect to link subnets through a NAT gateway.
+                Drag a Named Section to organize a workflow, or add network
+                boundaries for deployment detail. Every box and resource can be
+                connected with a labeled arrow.
               </p>
               <span className="eyebrow">BOUNDARIES & ROUTING</span>
               <div className="palette-list network-list">
@@ -786,7 +840,8 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 <SquareDashed />
                 <strong>Start with a blank architecture</strong>
                 <span>
-                  Drag a VPC, subnet, or AWS service here from the library.
+                  Drag a named section, VPC, subnet, or AWS service here from
+                  the library.
                 </span>
                 <button
                   onClick={(event) => {
@@ -848,7 +903,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
               .map((group) => (
                 <div
                   key={group.id}
-                  className={`network-group ${group.type} ${selected === group.id ? 'selected' : ''}`}
+                  className={`network-group ${group.type} theme-${group.theme} ${selected === group.id ? 'selected' : ''}`}
                   style={{
                     left: `${group.x}%`,
                     top: `${group.y}%`,
@@ -963,6 +1018,17 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
             {nodes.map((node) => {
               const Icon = iconMap[node.icon];
               const subnet = groups.find((group) => group.id === node.subnetId);
+              const placementLabel = subnet
+                ? subnet.type === 'private-subnet'
+                  ? 'Private subnet'
+                  : subnet.type === 'public-subnet'
+                    ? 'Public subnet'
+                    : subnet.type === 'section'
+                      ? 'Named section'
+                      : subnet.type === 'az'
+                        ? 'Availability Zone'
+                        : 'VPC'
+                : node.category;
               return (
                 <button
                   key={node.id}
@@ -999,13 +1065,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   <strong style={{ fontSize: `${10 * (node.size / 100)}px` }}>
                     {node.label}
                   </strong>
-                  <small>
-                    {subnet
-                      ? subnet.type === 'private-subnet'
-                        ? 'Private'
-                        : 'Public'
-                      : node.category}
-                  </small>
+                  <small>{placementLabel}</small>
                   {selected === node.id && (
                     <span
                       className="node-resize-handle"
@@ -1105,7 +1165,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 />
               </label>
               <label className="field-label" htmlFor="service-placement">
-                Placement
+                Section or network boundary
                 <select
                   id="service-placement"
                   className="property-select"
@@ -1124,14 +1184,12 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                     setSaved(false);
                   }}
                 >
-                  <option value="">Outside a subnet</option>
-                  {groups
-                    .filter((group) => group.type.includes('subnet'))
-                    .map((group) => (
-                      <option key={group.id} value={group.id}>
-                        {group.label}
-                      </option>
-                    ))}
+                  <option value="">Outside a section or boundary</option>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <div
@@ -1144,10 +1202,11 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                       ? groups.find(
                           (group) => group.id === selectedNode.subnetId,
                         )?.label
-                      : 'No subnet assigned'}
+                      : 'No section assigned'}
                   </strong>
                   <span>
-                    Drag the service into a subnet to update placement.
+                    Drag the service into any section or network boundary to
+                    update placement.
                   </span>
                 </div>
               </div>
@@ -1203,12 +1262,16 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 <div>
                   <strong>{selectedGroup.label}</strong>
                   <small>
-                    Network · {selectedGroup.type.replace('-', ' ')}
+                    {selectedGroup.type === 'section'
+                      ? 'Custom section'
+                      : `Network · ${selectedGroup.type.replace('-', ' ')}`}
                   </small>
                 </div>
               </div>
               <label className="field-label" htmlFor="group-name">
-                Name and CIDR
+                {selectedGroup.type === 'section'
+                  ? 'Section name'
+                  : 'Name and CIDR'}
                 <Input
                   id="group-name"
                   value={selectedGroup.label}
@@ -1224,6 +1287,33 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   }}
                 />
               </label>
+              {selectedGroup.type === 'section' && (
+                <label className="field-label" htmlFor="section-theme">
+                  Section color
+                  <select
+                    id="section-theme"
+                    className="property-select"
+                    value={selectedGroup.theme}
+                    onChange={(event) => {
+                      const theme = event.target.value as SectionTheme;
+                      setGroups((old) =>
+                        old.map((group) =>
+                          group.id === selectedGroup.id
+                            ? { ...group, theme }
+                            : group,
+                        ),
+                      );
+                      setSaved(false);
+                    }}
+                  >
+                    <option value="neutral">Neutral</option>
+                    <option value="blue">Blue</option>
+                    <option value="green">Green</option>
+                    <option value="amber">Amber</option>
+                    <option value="purple">Purple</option>
+                  </select>
+                </label>
+              )}
               <div className="property-block">
                 <strong>Resources placed here</strong>
                 {nodes.filter((node) => node.subnetId === selectedGroup.id)
@@ -1237,7 +1327,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                     ))
                 ) : (
                   <span className="muted-copy">
-                    Drag services into this subnet.
+                    Drag services into this box.
                   </span>
                 )}
               </div>
@@ -1302,7 +1392,10 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 onClick={removeSelected}
                 className="full-button delete-button"
               >
-                <Trash2 /> Delete {selectedGroup.type.replace('-', ' ')}
+                <Trash2 /> Delete{' '}
+                {selectedGroup.type === 'section'
+                  ? 'section'
+                  : selectedGroup.type.replace('-', ' ')}
               </Button>
             </div>
           )}
