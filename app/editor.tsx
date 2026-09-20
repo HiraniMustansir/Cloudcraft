@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRightLeft,
   BrainCircuit,
   BriefcaseBusiness,
   Check,
@@ -68,7 +69,33 @@ type GroupData = {
   w: number;
   h: number;
 };
-type Connection = { id: string; from: string; to: string; label?: string };
+type ConnectionKind =
+  | 'data'
+  | 'nat'
+  | 'vpn'
+  | 'peering'
+  | 'transit'
+  | 'direct-connect'
+  | 'internet'
+  | 'custom';
+type Connection = {
+  id: string;
+  from: string;
+  to: string;
+  kind: ConnectionKind;
+  label: string;
+};
+
+const connectionKinds: Array<{ value: ConnectionKind; label: string }> = [
+  { value: 'data', label: 'Data flow' },
+  { value: 'nat', label: 'NAT route' },
+  { value: 'vpn', label: 'VPN tunnel' },
+  { value: 'peering', label: 'VPC peering' },
+  { value: 'transit', label: 'Transit Gateway route' },
+  { value: 'direct-connect', label: 'Direct Connect' },
+  { value: 'internet', label: 'Internet route' },
+  { value: 'custom', label: 'Custom connection' },
+];
 
 const iconMap: Record<ServiceIcon, typeof Cpu> = {
   compute: Cpu,
@@ -147,107 +174,9 @@ const infrastructure: Array<CloudService & { structure?: GroupType }> = [
   },
 ];
 
-const starterGroups: GroupData[] = [
-  {
-    id: 'vpc-main',
-    label: 'Production VPC · 10.0.0.0/16',
-    type: 'vpc',
-    x: 3,
-    y: 8,
-    w: 94,
-    h: 84,
-  },
-  {
-    id: 'subnet-public',
-    label: 'Public subnet · 10.0.1.0/24',
-    type: 'public-subnet',
-    x: 8,
-    y: 20,
-    w: 39,
-    h: 62,
-  },
-  {
-    id: 'subnet-private',
-    label: 'Private subnet · 10.0.10.0/24',
-    type: 'private-subnet',
-    x: 53,
-    y: 20,
-    w: 39,
-    h: 62,
-  },
-];
-
-const starterNodes: NodeData[] = [
-  {
-    id: 'internet',
-    label: 'Internet Gateway',
-    category: 'Networking',
-    icon: 'network',
-    tone: 'purple',
-    x: 12,
-    y: 34,
-    subnetId: 'subnet-public',
-  },
-  {
-    id: 'lb',
-    label: 'Elastic Load Balancing',
-    category: 'Networking & Content Delivery',
-    icon: 'network',
-    tone: 'purple',
-    x: 28,
-    y: 34,
-    subnetId: 'subnet-public',
-  },
-  {
-    id: 'nat',
-    label: 'NAT Gateway',
-    category: 'Networking',
-    icon: 'network',
-    tone: 'purple',
-    x: 40,
-    y: 68,
-    subnetId: 'subnet-public',
-  },
-  {
-    id: 'ecs',
-    label: 'Amazon ECS',
-    category: 'Containers',
-    icon: 'compute',
-    tone: 'orange',
-    x: 62,
-    y: 34,
-    subnetId: 'subnet-private',
-  },
-  {
-    id: 'aurora',
-    label: 'Amazon Aurora',
-    category: 'Database',
-    icon: 'database',
-    tone: 'blue',
-    x: 80,
-    y: 34,
-    subnetId: 'subnet-private',
-  },
-  {
-    id: 's3',
-    label: 'Amazon S3',
-    category: 'Storage',
-    icon: 'storage',
-    tone: 'green',
-    x: 70,
-    y: 68,
-    subnetId: 'subnet-private',
-  },
-];
-
-const starterConnections: Connection[] = [
-  { id: 'c1', from: 'internet', to: 'lb' },
-  { id: 'c2', from: 'lb', to: 'ecs' },
-  { id: 'c3', from: 'ecs', to: 'aurora' },
-  { id: 'c4', from: 'ecs', to: 's3' },
-  { id: 'c5', from: 'subnet-public', to: 'nat', label: 'egress' },
-  { id: 'c6', from: 'nat', to: 'subnet-private', label: 'NAT route' },
-];
+const starterGroups: GroupData[] = [];
+const starterNodes: NodeData[] = [];
+const starterConnections: Connection[] = [];
 
 declare global {
   interface Document {
@@ -265,7 +194,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
   const [groups, setGroups] = useState<GroupData[]>(starterGroups);
   const [connections, setConnections] =
     useState<Connection[]>(starterConnections);
-  const [selected, setSelected] = useState('ecs');
+  const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [libraryMode, setLibraryMode] = useState<'services' | 'network'>(
@@ -278,6 +207,11 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
   const [prOpen, setPrOpen] = useState(false);
   const [prSent, setPrSent] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const groupDragRef = useRef<{
+    id: string;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
 
   const visibleServices = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -293,24 +227,37 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
 
   const selectedNode = nodes.find((node) => node.id === selected);
   const selectedGroup = groups.find((group) => group.id === selected);
+  const selectedConnection = connections.find((line) => line.id === selected);
+
+  const canvasPoint = (clientX: number, clientY: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 50, y: 50 };
+    return {
+      x: Math.max(2, Math.min(98, ((clientX - rect.left) / rect.width) * 100)),
+      y: Math.max(3, Math.min(97, ((clientY - rect.top) / rect.height) * 100)),
+    };
+  };
 
   const addService = useCallback(
-    (service: CloudService) => {
+    (service: CloudService, point?: { x: number; y: number }) => {
       const id = `${service.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${nodes.length + 1}`;
-      const privateSubnet = groups.find(
-        (item) => item.type === 'private-subnet',
-      );
-      const x = privateSubnet
-        ? privateSubnet.x +
-          Math.min(privateSubnet.w - 8, 12 + (nodes.length % 3) * 10)
-        : 50;
-      const y = privateSubnet
-        ? privateSubnet.y +
-          Math.min(privateSubnet.h - 8, 14 + (nodes.length % 2) * 23)
-        : 55;
+      const target = point ?? {
+        x: 35 + (nodes.length % 5) * 11,
+        y: 35 + Math.floor(nodes.length / 5) * 15,
+      };
+      const subnet = groups
+        .filter((item) => item.type.includes('subnet'))
+        .reverse()
+        .find(
+          (item) =>
+            target.x >= item.x &&
+            target.x <= item.x + item.w &&
+            target.y >= item.y &&
+            target.y <= item.y + item.h,
+        );
       setNodes((old) => [
         ...old,
-        { ...service, id, x, y, subnetId: privateSubnet?.id },
+        { ...service, id, x: target.x, y: target.y, subnetId: subnet?.id },
       ]);
       setSelected(id);
       setSaved(false);
@@ -318,27 +265,71 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
     [groups, nodes.length],
   );
 
-  const addStructure = (item: (typeof infrastructure)[number]) => {
-    if (!item.structure) return addService(item);
+  const addStructure = (
+    item: (typeof infrastructure)[number],
+    point?: { x: number; y: number },
+  ) => {
+    if (!item.structure) return addService(item, point);
     const sameType = groups.filter(
       (group) => group.type === item.structure,
     ).length;
     const id = `${item.structure}-${groups.length + 1}`;
     const isSubnet = item.structure.includes('subnet');
+    const target = point ?? {
+      x: 48 + (sameType % 3) * 5,
+      y: 46 + (sameType % 3) * 5,
+    };
     setGroups((old) => [
       ...old,
       {
         id,
         type: item.structure!,
         label: `${item.label} ${sameType + 1}`,
-        x: isSubnet ? 12 + (sameType % 2) * 44 : 6 + sameType * 3,
-        y: isSubnet ? 26 + Math.floor(sameType / 2) * 28 : 12 + sameType * 4,
-        w: isSubnet ? 38 : item.structure === 'az' ? 86 : 90,
-        h: isSubnet ? 24 : item.structure === 'az' ? 70 : 78,
+        x: Math.max(
+          1,
+          target.x - (isSubnet ? 18 : item.structure === 'az' ? 32 : 38),
+        ),
+        y: Math.max(
+          3,
+          target.y - (isSubnet ? 10 : item.structure === 'az' ? 24 : 30),
+        ),
+        w: isSubnet ? 36 : item.structure === 'az' ? 64 : 76,
+        h: isSubnet ? 22 : item.structure === 'az' ? 48 : 60,
       },
     ]);
     setSelected(id);
     setSaved(false);
+  };
+
+  const moveGroup = (id: string, clientX: number, clientY: number) => {
+    const drag = groupDragRef.current;
+    if (!drag || drag.id !== id) return;
+    const point = canvasPoint(clientX, clientY);
+    setGroups((old) =>
+      old.map((group) =>
+        group.id === id
+          ? {
+              ...group,
+              x: Math.max(0, Math.min(100 - group.w, point.x - drag.offsetX)),
+              y: Math.max(0, Math.min(100 - group.h, point.y - drag.offsetY)),
+            }
+          : group,
+      ),
+    );
+    setSaved(false);
+  };
+
+  const handleCanvasDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData('application/cloudcraft');
+    if (!raw) return;
+    const payload = JSON.parse(raw) as {
+      kind: 'service' | 'structure';
+      item: CloudService & { structure?: GroupType };
+    };
+    const point = canvasPoint(event.clientX, event.clientY);
+    if (payload.kind === 'structure') addStructure(payload.item, point);
+    else addService(payload.item, point);
   };
 
   const endpointPoint = (id: string) => {
@@ -361,19 +352,23 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
       return;
     }
     if (connectionStart !== id) {
+      const connectionId = `connection-${connections.length + 1}`;
       setConnections((old) => [
         ...old,
         {
-          id: `connection-${connections.length + 1}`,
+          id: connectionId,
           from: connectionStart,
           to: id,
+          kind: 'data',
+          label: 'Data flow',
         },
       ]);
       setSaved(false);
+      setSelected(connectionId);
     }
     setConnectionStart(null);
     setConnectMode(false);
-    setSelected(id);
+    if (connectionStart === id) setSelected(id);
   };
 
   const moveNode = (id: string, clientX: number, clientY: number) => {
@@ -416,7 +411,12 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
     setNodes((old) => old.filter((node) => node.id !== selected));
     setGroups((old) => old.filter((group) => group.id !== selected));
     setConnections((old) =>
-      old.filter((line) => line.from !== selected && line.to !== selected),
+      old.filter(
+        (line) =>
+          line.id !== selected &&
+          line.from !== selected &&
+          line.to !== selected,
+      ),
     );
     setSelected('');
     setSaved(false);
@@ -596,7 +596,18 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 {visibleServices.map((item) => {
                   const Icon = iconMap[item.icon];
                   return (
-                    <button key={item.label} onClick={() => addService(item)}>
+                    <button
+                      key={item.label}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'copy';
+                        event.dataTransfer.setData(
+                          'application/cloudcraft',
+                          JSON.stringify({ kind: 'service', item }),
+                        );
+                      }}
+                      onClick={() => addService(item)}
+                    >
                       <span className={`palette-icon ${item.tone}`}>
                         <Icon />
                       </span>
@@ -621,7 +632,18 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 {infrastructure.map((item) => {
                   const Icon = item.structure ? Layers3 : iconMap[item.icon];
                   return (
-                    <button key={item.label} onClick={() => addStructure(item)}>
+                    <button
+                      key={item.label}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'copy';
+                        event.dataTransfer.setData(
+                          'application/cloudcraft',
+                          JSON.stringify({ kind: 'structure', item }),
+                        );
+                      }}
+                      onClick={() => addStructure(item)}
+                    >
                       <span className={`palette-icon ${item.tone}`}>
                         <Icon />
                       </span>
@@ -689,8 +711,31 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
           <div
             ref={canvasRef}
             className="editor-canvas subnet-canvas"
+            aria-label="Cloud architecture canvas"
             style={{ transform: `scale(${zoom / 100})` }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }}
+            onDrop={handleCanvasDrop}
           >
+            {!nodes.length && !groups.length && (
+              <div className="blank-canvas-guide">
+                <SquareDashed />
+                <strong>Start with a blank architecture</strong>
+                <span>
+                  Drag a VPC, subnet, or AWS service here from the library.
+                </span>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setLibraryMode('network');
+                  }}
+                >
+                  Open network library
+                </button>
+              </div>
+            )}
             <svg
               className="editor-lines"
               viewBox="0 0 1000 620"
@@ -717,14 +762,21 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                 return (
                   <g key={line.id}>
                     <path
+                      className={`connection-line connection-${line.kind} ${selected === line.id ? 'selected' : ''}`}
                       d={`M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
                       markerEnd="url(#arrow)"
                     />
-                    {line.label && (
-                      <text x={midX} y={midY - 8}>
-                        {line.label}
-                      </text>
-                    )}
+                    <path
+                      className="connection-hit"
+                      d={`M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelected(line.id);
+                      }}
+                    />
+                    <text x={midX} y={midY - 8}>
+                      {line.label}
+                    </text>
                   </g>
                 );
               })}
@@ -745,6 +797,26 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   <button
                     type="button"
                     className="group-label"
+                    onPointerDown={(event) => {
+                      if (connectMode) return;
+                      const point = canvasPoint(event.clientX, event.clientY);
+                      groupDragRef.current = {
+                        id: group.id,
+                        offsetX: point.x - group.x,
+                        offsetY: point.y - group.y,
+                      };
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      setSelected(group.id);
+                    }}
+                    onPointerMove={(event) => {
+                      if (
+                        event.currentTarget.hasPointerCapture(event.pointerId)
+                      )
+                        moveGroup(group.id, event.clientX, event.clientY);
+                    }}
+                    onPointerUp={() => {
+                      groupDragRef.current = null;
+                    }}
                     onClick={(event) => {
                       event.stopPropagation();
                       connectEndpoint(group.id);
@@ -992,7 +1064,98 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
               </Button>
             </div>
           )}
-          {!selectedNode && !selectedGroup && (
+          {selectedConnection && (
+            <div className="properties-content">
+              <div className="selected-service connection-property-title">
+                <span
+                  className={`connection-swatch ${selectedConnection.kind}`}
+                >
+                  <Share2 />
+                </span>
+                <div>
+                  <strong>{selectedConnection.label}</strong>
+                  <small>Manual connection</small>
+                </div>
+              </div>
+              <label className="field-label" htmlFor="connection-type">
+                Connection type
+                <select
+                  id="connection-type"
+                  className="property-select"
+                  value={selectedConnection.kind}
+                  onChange={(event) => {
+                    const kind = event.target.value as ConnectionKind;
+                    const defaultLabel =
+                      connectionKinds.find((item) => item.value === kind)
+                        ?.label ?? 'Connection';
+                    setConnections((old) =>
+                      old.map((line) =>
+                        line.id === selectedConnection.id
+                          ? { ...line, kind, label: defaultLabel }
+                          : line,
+                      ),
+                    );
+                    setSaved(false);
+                  }}
+                >
+                  {connectionKinds.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label" htmlFor="connection-label">
+                Arrow label
+                <Input
+                  id="connection-label"
+                  value={selectedConnection.label}
+                  onChange={(event) => {
+                    setConnections((old) =>
+                      old.map((line) =>
+                        line.id === selectedConnection.id
+                          ? { ...line, label: event.target.value }
+                          : line,
+                      ),
+                    );
+                    setSaved(false);
+                  }}
+                />
+              </label>
+              <div className="connection-endpoints">
+                <span>
+                  {nodes.find((node) => node.id === selectedConnection.from)
+                    ?.label ??
+                    groups.find((group) => group.id === selectedConnection.from)
+                      ?.label}
+                </span>
+                <ArrowRightLeft />
+                <span>
+                  {nodes.find((node) => node.id === selectedConnection.to)
+                    ?.label ??
+                    groups.find((group) => group.id === selectedConnection.to)
+                      ?.label}
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                className="full-button"
+                onClick={() => {
+                  setConnections((old) =>
+                    old.map((line) =>
+                      line.id === selectedConnection.id
+                        ? { ...line, from: line.to, to: line.from }
+                        : line,
+                    ),
+                  );
+                  setSaved(false);
+                }}
+              >
+                <ArrowRightLeft /> Reverse direction
+              </Button>
+            </div>
+          )}
+          {!selectedNode && !selectedGroup && !selectedConnection && (
             <div className="properties-empty">
               <MousePointer2 />
               <strong>Select a canvas item</strong>

@@ -1767,6 +1767,131 @@ button {
   font-size: 10px;
 }
 
+.palette-list > button[draggable='true'] {
+  cursor: grab;
+}
+.palette-list > button[draggable='true']:active,
+.group-label:active {
+  cursor: grabbing;
+}
+.group-label {
+  touch-action: none;
+  cursor: grab;
+}
+.blank-canvas-guide {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: 310px;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  color: #7c888d;
+  text-align: center;
+}
+.blank-canvas-guide > svg {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 12px;
+  color: #4f867a;
+  stroke-width: 1.4;
+}
+.blank-canvas-guide strong {
+  color: #283338;
+  font-size: 14px;
+}
+.blank-canvas-guide span {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.blank-canvas-guide button {
+  margin-top: 13px;
+  border: 1px solid #cadad5;
+  border-radius: 7px;
+  background: white;
+  padding: 7px 10px;
+  pointer-events: auto;
+  color: #175f52;
+  font-size: 10px;
+  font-weight: 700;
+}
+.editor-lines .connection-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.editor-lines .connection-line.selected {
+  stroke: #0a7c68;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 1px 2px rgb(23 95 82 / 25%));
+}
+.editor-lines .connection-vpn {
+  stroke: #7556c8;
+  stroke-dasharray: 8 5;
+}
+.editor-lines .connection-peering,
+.editor-lines .connection-transit {
+  stroke: #2f7fac;
+}
+.editor-lines .connection-nat {
+  stroke: #c56b25;
+}
+.editor-lines .connection-direct-connect {
+  stroke: #9a4e8e;
+  stroke-width: 3;
+}
+.editor-lines .connection-internet {
+  stroke: #26845f;
+}
+.connection-property-title {
+  align-items: center;
+}
+.connection-swatch {
+  display: grid;
+  width: 39px;
+  height: 39px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  background: #e8f2ef;
+  color: #175f52;
+}
+.connection-swatch.vpn {
+  background: #f0eafa;
+  color: #7556c8;
+}
+.connection-swatch.nat {
+  background: #fff0e3;
+  color: #b65e1e;
+}
+.connection-swatch svg {
+  width: 18px;
+}
+.connection-endpoints {
+  display: grid;
+  grid-template-columns: 1fr 20px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  border: 1px solid #e0e5e7;
+  border-radius: 8px;
+  background: #f8faf9;
+  padding: 9px;
+  color: #526067;
+  font-size: 9px;
+  text-align: center;
+}
+.connection-endpoints svg {
+  width: 13px;
+  color: #175f52;
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
