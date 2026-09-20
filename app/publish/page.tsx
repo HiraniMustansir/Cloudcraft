@@ -11,6 +11,38 @@ import { Textarea } from '@/components/ui/textarea';
 import { createArchitecture } from '@/lib/cloudcraft-data';
 import type { Provider } from '@/lib/cloudcraft-types';
 
+const providerChoices: Array<{
+  value: Provider;
+  label: string;
+  mark: string;
+  description: string;
+}> = [
+  {
+    value: 'AWS',
+    label: 'Amazon Web Services',
+    mark: 'AWS',
+    description: 'Build with the complete AWS service catalog.',
+  },
+  {
+    value: 'Azure',
+    label: 'Microsoft Azure',
+    mark: 'AZ',
+    description: 'Use Azure, Microsoft, and hybrid services.',
+  },
+  {
+    value: 'GCP',
+    label: 'Google Cloud',
+    mark: 'GCP',
+    description: 'Design with Google Cloud and Firebase services.',
+  },
+  {
+    value: 'Multi-cloud',
+    label: 'Hybrid / multi-cloud',
+    mark: 'HYB',
+    description: 'Mix providers and add cross-cloud connectivity.',
+  },
+];
+
 export default function PublishPage() {
   const router = useRouter();
   const { user, loading, openAuth } = useAuth();
@@ -88,6 +120,44 @@ export default function PublishPage() {
               <div className="cc-form-section-title">
                 <span>1</span>
                 <div>
+                  <strong>Choose your cloud environment</strong>
+                  <p>
+                    This controls which services are shown in the architecture
+                    editor.
+                  </p>
+                </div>
+              </div>
+              <div className="cc-provider-picker" role="radiogroup">
+                {providerChoices.map((choice) => (
+                  <label
+                    key={choice.value}
+                    className={`cc-provider-choice ${provider === choice.value ? 'selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="cloud-provider"
+                      value={choice.value}
+                      checked={provider === choice.value}
+                      onChange={() => setProvider(choice.value)}
+                    />
+                    <span
+                      className={`cc-provider-mark ${choice.value.toLowerCase().replaceAll(/[^a-z]+/g, '-')}`}
+                    >
+                      {choice.mark}
+                    </span>
+                    <span>
+                      <strong>{choice.label}</strong>
+                      <small>{choice.description}</small>
+                    </span>
+                    <i aria-hidden="true" />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="cc-form-section">
+              <div className="cc-form-section-title">
+                <span>2</span>
+                <div>
                   <strong>Post details</strong>
                   <p>Help readers understand what they’ll learn.</p>
                 </div>
@@ -98,7 +168,7 @@ export default function PublishPage() {
                   id="publish-title"
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="e.g. A resilient multi-region API on AWS"
+                  placeholder={`e.g. A resilient API on ${provider === 'Multi-cloud' ? 'multiple clouds' : provider}`}
                   minLength={3}
                   maxLength={120}
                   required
@@ -114,35 +184,19 @@ export default function PublishPage() {
                   required
                 />
               </label>
-              <div className="cc-two-columns">
-                <label>
-                  Cloud provider
-                  <select
-                    value={provider}
-                    onChange={(event) =>
-                      setProvider(event.target.value as Provider)
-                    }
-                  >
-                    <option>AWS</option>
-                    <option>Azure</option>
-                    <option>GCP</option>
-                    <option>Multi-cloud</option>
-                  </select>
-                </label>
-                <label htmlFor="publish-tags">
-                  Tags
-                  <Input
-                    id="publish-tags"
-                    value={tags}
-                    onChange={(event) => setTags(event.target.value)}
-                    placeholder="serverless, security, networking"
-                  />
-                </label>
-              </div>
+              <label htmlFor="publish-tags">
+                Tags
+                <Input
+                  id="publish-tags"
+                  value={tags}
+                  onChange={(event) => setTags(event.target.value)}
+                  placeholder="serverless, security, networking"
+                />
+              </label>
             </div>
             <div className="cc-form-section">
               <div className="cc-form-section-title">
-                <span>2</span>
+                <span>3</span>
                 <div>
                   <strong>Architecture story</strong>
                   <p>Capture the context that a diagram cannot show alone.</p>
@@ -192,7 +246,7 @@ export default function PublishPage() {
               <span>
                 <Layers3 /> The draft will be private until you publish it.
               </span>
-              <Button disabled={pending || loading}>
+              <Button type="submit" disabled={pending || loading}>
                 {pending ? 'Creating draft…' : 'Continue to canvas'}
                 <ArrowRight />
               </Button>

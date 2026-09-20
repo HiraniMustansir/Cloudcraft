@@ -4,6 +4,7 @@ import {
   emptyDiagram,
   type Architecture,
   type ArchitectureComment,
+  type ArchitectureFork,
   type ArchitectureVersion,
   type Profile,
   type Provider,
@@ -384,6 +385,16 @@ export async function listPullRequests(targetArchitectureId: string) {
     .eq('target_architecture_id', targetArchitectureId)
     .order('created_at', { ascending: false });
   return (data ?? []) as unknown as PullRequest[];
+}
+
+export async function listArchitectureForks(sourceArchitectureId: string) {
+  const { data, error } = await createClient()
+    .from('architecture_forks')
+    .select('*, author:profiles!architecture_forks_author_id_fkey(*)')
+    .eq('source_architecture_id', sourceArchitectureId)
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return (data ?? []) as unknown as ArchitectureFork[];
 }
 
 export async function reviewPullRequest(

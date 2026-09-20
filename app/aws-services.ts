@@ -17,6 +17,7 @@ export type CloudService = {
   category: string;
   icon: ServiceIcon;
   tone: string;
+  provider?: 'AWS' | 'Azure' | 'GCP' | 'Hybrid';
 };
 
 const group = (
@@ -25,7 +26,9 @@ const group = (
   tone: string,
   names: string,
 ): CloudService[] =>
-  names.split('|').map((label) => ({ label, category, icon, tone }));
+  names
+    .split('|')
+    .map((label) => ({ label, category, icon, tone, provider: 'AWS' }));
 
 const allServices: CloudService[] = [
   ...group(

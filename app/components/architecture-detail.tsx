@@ -12,12 +12,12 @@ import {
   GitPullRequest,
   Heart,
   MessageCircle,
-  Network,
   Pencil,
   Send,
   Share2,
 } from 'lucide-react';
 import { AppHeader } from '@/app/components/app-header';
+import { DiagramPreview } from '@/app/components/diagram-preview';
 import { useAuth } from '@/app/providers';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,6 +26,7 @@ import {
   forkArchitecture,
   getArchitecture,
   getFollowState,
+  listArchitectureForks,
   listComments,
   listPullRequests,
   listVersions,
@@ -36,6 +37,7 @@ import {
 import type {
   Architecture,
   ArchitectureComment,
+  ArchitectureFork,
   ArchitectureVersion,
   PullRequest,
 } from '@/lib/cloudcraft-types';
@@ -47,6 +49,7 @@ export function ArchitectureDetail({ id }: { id: string }) {
   const [comments, setComments] = useState<ArchitectureComment[]>([]);
   const [versions, setVersions] = useState<ArchitectureVersion[]>([]);
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
+  const [forks, setForks] = useState<ArchitectureFork[]>([]);
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState('');
   const [following, setFollowing] = useState(false);
@@ -60,14 +63,21 @@ export function ArchitectureDetail({ id }: { id: string }) {
     setLiked(Boolean(result.item?.liked));
     setBookmarked(Boolean(result.item?.bookmarked));
     if (result.item) {
-      const [nextComments, nextVersions] = await Promise.all([
-        listComments(result.item.id),
-        listVersions(result.item.id),
-      ]);
+      const [nextComments, nextVersions, nextForks, nextPullRequests] =
+        await Promise.all([
+          listComments(result.item.id),
+          listVersions(result.item.id),
+          result.item.id.startsWith('demo-')
+            ? Promise.resolve([])
+            : listArchitectureForks(result.item.id),
+          user && !result.item.id.startsWith('demo-')
+            ? listPullRequests(result.item.id)
+            : Promise.resolve([]),
+        ]);
       setComments(nextComments);
       setVersions(nextVersions);
-      if (user?.id === result.item.author_id)
-        setPullRequests(await listPullRequests(result.item.id));
+      setForks(nextForks);
+      setPullRequests(nextPullRequests);
       if (
         user &&
         result.item.author_id !== user.id &&
@@ -140,6 +150,7 @@ export function ArchitectureDetail({ id }: { id: string }) {
             <a href="#challenge">The challenge</a>
             <a href="#approach">The approach</a>
             <a href="#architecture">Architecture</a>
+            <a href="#collaboration">Collaboration</a>
             <a href="#tradeoffs">Trade-offs</a>
             <a href="#discussion">Discussion</a>
           </nav>
@@ -236,19 +247,7 @@ export function ArchitectureDetail({ id }: { id: string }) {
               </div>
             </div>
             <div className="cc-diagram-preview">
-              <div className="cc-diagram-boundary">
-                <span>{item.provider} · Production</span>
-                <div className="cc-preview-flow">
-                  {['Edge', 'Network', 'Compute', 'Data', 'Delivery'].map(
-                    (label, index) => (
-                      <div key={label}>
-                        <i>{index < 4 ? <Network /> : <Cloud />}</i>
-                        <strong>{label}</strong>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </div>
+              <DiagramPreview diagram={item.diagram} />
             </div>
             <div className="cc-version-strip">
               <span>main</span>
@@ -258,6 +257,119 @@ export function ArchitectureDetail({ id }: { id: string }) {
               <span>{versions.length} saved versions</span>
             </div>
           </section>
+
+          {(isOwner || forks.length > 0 || pullRequests.length > 0) && (
+            <section id="collaboration" className="cc-collaboration">
+              <div className="cc-section-heading">
+                <div>
+                  <span className="cc-eyebrow">COLLABORATION</span>
+                  <h2>Forks and pull requests</h2>
+                </div>
+              </div>
+              <div className="cc-collaboration-grid">
+                <div className="cc-collaboration-panel">
+                  <div className="cc-collaboration-title">
+                    <GitFork />
+                    <div>
+                      <strong>Forks</strong>
+                      <span>{forks.length} total</span>
+                    </div>
+                  </div>
+                  {forks.length === 0 ? (
+                    <p>No one has forked this architecture yet.</p>
+                  ) : (
+                    <div className="cc-collaboration-list">
+                      {forks.map((fork) => (
+                        <div key={fork.fork_architecture_id}>
+                          <span className="cc-avatar small">
+                            {(fork.author?.display_name ?? 'D')[0]}
+                          </span>
+                          <div>
+                            <Link
+                              href={`/profiles/${fork.author?.username ?? 'developer'}`}
+                            >
+                              {fork.author?.display_name ?? 'Developer'}
+                            </Link>
+                            <small>
+                              Forked{' '}
+                              {new Date(fork.created_at).toLocaleDateString()}
+                            </small>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="cc-collaboration-panel">
+                  <div className="cc-collaboration-title">
+                    <GitPullRequest />
+                    <div>
+                      <strong>Pull requests</strong>
+                      <span>{pullRequests.length} visible to you</span>
+                    </div>
+                  </div>
+                  {pullRequests.length === 0 ? (
+                    <p>No pull requests have been submitted yet.</p>
+                  ) : (
+                    <div className="cc-collaboration-list requests">
+                      {pullRequests.map((request) => (
+                        <div key={request.id}>
+                          <div className="cc-pr-main">
+                            <strong>{request.title}</strong>
+                            <small>
+                              by{' '}
+                              <Link
+                                href={`/profiles/${request.author?.username ?? 'developer'}`}
+                              >
+                                {request.author?.display_name ?? 'Contributor'}
+                              </Link>{' '}
+                              ·{' '}
+                              {new Date(
+                                request.created_at,
+                              ).toLocaleDateString()}
+                            </small>
+                            {request.description && (
+                              <p>{request.description}</p>
+                            )}
+                          </div>
+                          <span className={`cc-pr-status ${request.status}`}>
+                            {request.status}
+                          </span>
+                          {isOwner && request.status === 'open' && (
+                            <div className="cc-pr-actions">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  void reviewPullRequest(
+                                    request,
+                                    'rejected',
+                                  ).then(load);
+                                }}
+                              >
+                                Reject
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  void reviewPullRequest(
+                                    request,
+                                    'approved',
+                                  ).then(load);
+                                }}
+                              >
+                                Approve
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
 
           <section id="tradeoffs" className="cc-prose">
             <h2>Trade-offs</h2>
@@ -318,7 +430,7 @@ export function ArchitectureDetail({ id }: { id: string }) {
                   if (!user) openAuth();
                 }}
               />
-              <Button disabled={!comment.trim()}>
+              <Button type="submit" disabled={!comment.trim()}>
                 <Send /> Comment
               </Button>
             </form>
@@ -355,44 +467,25 @@ export function ArchitectureDetail({ id }: { id: string }) {
             <strong>Well-documented</strong>
             <p>Problem, approach, canvas, and trade-offs are available.</p>
           </div>
-          {isOwner && pullRequests.length > 0 && (
+          {isOwner && (forks.length > 0 || pullRequests.length > 0) && (
             <div className="cc-pr-card">
-              <span>CONTRIBUTIONS</span>
-              {pullRequests.map((request) => (
-                <div key={request.id}>
-                  <GitPullRequest />
-                  <strong>{request.title}</strong>
-                  <small>
-                    {request.status} · by{' '}
-                    {request.author?.display_name ?? 'Contributor'}
-                  </small>
-                  {request.status === 'open' && (
-                    <div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          void reviewPullRequest(request, 'rejected').then(
-                            load,
-                          );
-                        }}
-                      >
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          void reviewPullRequest(request, 'approved').then(
-                            load,
-                          );
-                        }}
-                      >
-                        Approve
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+              <span>COLLABORATION</span>
+              <a href="#collaboration" className="cc-collaboration-summary">
+                <GitFork />
+                <strong>{forks.length} forks</strong>
+                <small>See who built on your work</small>
+              </a>
+              <a href="#collaboration" className="cc-collaboration-summary">
+                <GitPullRequest />
+                <strong>{pullRequests.length} pull requests</strong>
+                <small>
+                  {
+                    pullRequests.filter((request) => request.status === 'open')
+                      .length
+                  }{' '}
+                  awaiting review
+                </small>
+              </a>
             </div>
           )}
           {notice && (

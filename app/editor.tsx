@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   ArrowLeft,
   ArrowRightLeft,
@@ -19,8 +26,13 @@ import {
   HardDrive,
   Layers3,
   Minus,
+  MoveRight,
   MousePointer2,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   RadioTower,
   Redo2,
@@ -49,12 +61,18 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import {
-  awsCategories,
   awsServices,
   type CloudService,
   type ServiceIcon,
 } from './aws-services';
-import type { DiagramDocument } from '@/lib/cloudcraft-types';
+import { azureServices } from './azure-services';
+import { gcpServices } from './gcp-services';
+import { hybridServices } from './hybrid-services';
+import type { DiagramDocument, Provider } from '@/lib/cloudcraft-types';
+import {
+  getConnectionGeometry,
+  type ConnectionRouting,
+} from '@/lib/diagram-geometry';
 
 type NodeData = CloudService & {
   id: string;
@@ -62,6 +80,13 @@ type NodeData = CloudService & {
   y: number;
   subnetId?: string;
   size: number;
+  role?: 'service' | 'connector';
+  connectorKind?:
+    | 'nat'
+    | 'internet-gateway'
+    | 'vpc-endpoint'
+    | 'routing'
+    | 'hybrid';
 };
 type GroupType = 'section' | 'vpc' | 'az' | 'public-subnet' | 'private-subnet';
 type SectionTheme = 'neutral' | 'blue' | 'green' | 'amber' | 'purple';
@@ -85,6 +110,7 @@ type ConnectionKind =
   | 'vpc-endpoint'
   | 'internet-gateway'
   | 'internet'
+  | 'hybrid'
   | 'custom';
 type Connection = {
   id: string;
@@ -92,6 +118,7 @@ type Connection = {
   to: string;
   kind: ConnectionKind;
   label: string;
+  routing?: ConnectionRouting;
 };
 
 const connectionKinds: Array<{ value: ConnectionKind; label: string }> = [
@@ -104,8 +131,33 @@ const connectionKinds: Array<{ value: ConnectionKind; label: string }> = [
   { value: 'vpc-endpoint', label: 'VPC Endpoint' },
   { value: 'internet-gateway', label: 'Internet Gateway path' },
   { value: 'internet', label: 'Internet route' },
+  { value: 'hybrid', label: 'Cross-cloud connection' },
   { value: 'custom', label: 'Custom connection' },
 ];
+
+const connectorKindFor = (
+  service: CloudService & { connectorKind?: NodeData['connectorKind'] },
+): NodeData['connectorKind'] => {
+  if (service.connectorKind) return service.connectorKind;
+  const label = service.label.toLowerCase();
+  if (label.includes('internet gateway')) return 'internet-gateway';
+  if (label.includes('nat gateway')) return 'nat';
+  if (label.includes('vpc endpoint') || label.includes('privatelink'))
+    return 'vpc-endpoint';
+  if (
+    label.includes('azure arc') ||
+    label.includes('interconnect') ||
+    label.includes('direct connect') ||
+    label.includes('expressroute') ||
+    label.includes('vpn gateway') ||
+    label.includes('site-to-site vpn') ||
+    label.includes('sd-wan')
+  )
+    return 'hybrid';
+  if (label.includes('route table') || label.includes('transit gateway'))
+    return 'routing';
+  return undefined;
+};
 
 const iconMap: Record<ServiceIcon, typeof Cpu> = {
   compute: Cpu,
@@ -122,7 +174,12 @@ const iconMap: Record<ServiceIcon, typeof Cpu> = {
   business: BriefcaseBusiness,
 };
 
-const infrastructure: Array<CloudService & { structure?: GroupType }> = [
+type InfrastructureItem = CloudService & {
+  structure?: GroupType;
+  connectorKind?: NodeData['connectorKind'];
+};
+
+const infrastructure: InfrastructureItem[] = [
   {
     label: 'Named Section',
     category: 'Custom service group',
@@ -163,18 +220,21 @@ const infrastructure: Array<CloudService & { structure?: GroupType }> = [
     category: 'Networking',
     icon: 'network',
     tone: 'purple',
+    connectorKind: 'nat',
   },
   {
     label: 'Internet Gateway',
     category: 'Networking',
     icon: 'network',
     tone: 'purple',
+    connectorKind: 'internet-gateway',
   },
   {
     label: 'Route Table',
     category: 'Networking',
     icon: 'network',
     tone: 'purple',
+    connectorKind: 'routing',
   },
   { label: 'Network ACL', category: 'Security', icon: 'security', tone: 'red' },
   {
@@ -188,6 +248,7 @@ const infrastructure: Array<CloudService & { structure?: GroupType }> = [
     category: 'Networking',
     icon: 'network',
     tone: 'purple',
+    connectorKind: 'vpc-endpoint',
   },
   {
     label: 'Customer / Web Browser',
@@ -229,6 +290,7 @@ type ArchitectureEditorProps = {
   title?: string;
   ownerLabel?: string;
   status?: 'draft' | 'published';
+  provider?: Provider;
   initialDiagram?: DiagramDocument;
   onSave?: (diagram: DiagramDocument) => Promise<void>;
   onPublish?: (diagram: DiagramDocument) => Promise<void>;
@@ -244,6 +306,7 @@ export function ArchitectureEditor({
   title = 'Production topology',
   ownerLabel = 'Your architecture',
   status = 'draft',
+  provider = 'AWS',
   initialDiagram,
   onSave,
   onPublish,
@@ -262,10 +325,17 @@ export function ArchitectureEditor({
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
+  const [providerFilter, setProviderFilter] = useState<
+    'All' | 'AWS' | 'Azure' | 'GCP' | 'Hybrid'
+  >(provider === 'Multi-cloud' ? 'All' : provider);
   const [libraryMode, setLibraryMode] = useState<'services' | 'network'>(
     'services',
   );
   const [zoom, setZoom] = useState(100);
+  const [libraryWidth, setLibraryWidth] = useState(310);
+  const [propertiesWidth, setPropertiesWidth] = useState(300);
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false);
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
   const [saved, setSaved] = useState(true);
   const [connectMode, setConnectMode] = useState(false);
   const [connectionStart, setConnectionStart] = useState<string | null>(null);
@@ -290,10 +360,53 @@ export function ArchitectureEditor({
     startW: number;
     startH: number;
   } | null>(null);
+  const panelResizeRef = useRef<{
+    side: 'library' | 'properties';
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  const resizePanel = (clientX: number) => {
+    const resize = panelResizeRef.current;
+    if (!resize) return;
+    const delta = clientX - resize.startX;
+    if (resize.side === 'library') {
+      setLibraryWidth(Math.max(230, Math.min(480, resize.startWidth + delta)));
+    } else {
+      setPropertiesWidth(
+        Math.max(250, Math.min(440, resize.startWidth - delta)),
+      );
+    }
+  };
+
+  const availableServices = useMemo(() => {
+    if (provider === 'AWS') return awsServices;
+    if (provider === 'Azure') return azureServices;
+    if (provider === 'GCP') return gcpServices;
+    const services = [
+      ...awsServices,
+      ...azureServices,
+      ...gcpServices,
+      ...hybridServices,
+    ];
+    return providerFilter === 'All'
+      ? services
+      : services.filter((service) => service.provider === providerFilter);
+  }, [provider, providerFilter]);
+
+  const serviceCategories = useMemo(
+    () => [
+      'All',
+      ...Array.from(
+        new Set(availableServices.map((service) => service.category)),
+      ),
+    ],
+    [availableServices],
+  );
 
   const visibleServices = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return awsServices.filter(
+    return availableServices.filter(
       (service) =>
         (category === 'All' || service.category === category) &&
         (!needle ||
@@ -301,7 +414,7 @@ export function ArchitectureEditor({
             .toLowerCase()
             .includes(needle)),
     );
-  }, [query, category]);
+  }, [availableServices, query, category]);
 
   const selectedNode = nodes.find((node) => node.id === selected);
   const selectedGroup = groups.find((group) => group.id === selected);
@@ -339,8 +452,12 @@ export function ArchitectureEditor({
   };
 
   const addService = useCallback(
-    (service: CloudService, point?: { x: number; y: number }) => {
-      const id = `${service.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${nodes.length + 1}`;
+    (
+      service: CloudService & { connectorKind?: NodeData['connectorKind'] },
+      point?: { x: number; y: number },
+    ) => {
+      const connectorKind = connectorKindFor(service);
+      const id = `${(service.provider ?? provider).toLowerCase()}-${service.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${nodes.length + 1}`;
       const target = point ?? {
         x: 35 + (nodes.length % 5) * 11,
         y: 35 + Math.floor(nodes.length / 5) * 15,
@@ -363,12 +480,14 @@ export function ArchitectureEditor({
           y: target.y,
           subnetId: placement?.id,
           size: 100,
+          role: connectorKind ? 'connector' : 'service',
+          connectorKind,
         },
       ]);
       setSelected(id);
       setSaved(false);
     },
-    [groups, nodes.length],
+    [groups, nodes.length, provider],
   );
 
   const addStructure = (
@@ -506,16 +625,33 @@ export function ArchitectureEditor({
     else addService(payload.item, point);
   };
 
-  const endpointPoint = (id: string) => {
+  const endpointBounds = (id: string) => {
     const node = nodes.find((item) => item.id === id);
-    if (node) return { x: node.x * 10, y: node.y * 6.2 };
+    if (node) {
+      const scale = node.size / 100;
+      return {
+        x: node.x * 10,
+        y: node.y * 6.2,
+        w: (node.role === 'connector' ? 104 : 88) * scale,
+        h: (node.role === 'connector' ? 38 : 76) * scale,
+      };
+    }
     const group = groups.find((item) => item.id === id);
     if (group)
       return {
         x: (group.x + group.w / 2) * 10,
         y: (group.y + group.h / 2) * 6.2,
+        w: group.w * 10,
+        h: group.h * 6.2,
       };
-    return { x: 0, y: 0 };
+    return null;
+  };
+
+  const connectionGeometry = (line: Connection) => {
+    const fromBounds = endpointBounds(line.from);
+    const toBounds = endpointBounds(line.to);
+    if (!fromBounds || !toBounds) return null;
+    return getConnectionGeometry(fromBounds, toBounds, line.routing);
   };
 
   const connectEndpoint = (id: string) => {
@@ -527,14 +663,33 @@ export function ArchitectureEditor({
     }
     if (connectionStart !== id) {
       const connectionId = `connection-${connections.length + 1}`;
+      const connector = nodes.find(
+        (node) =>
+          (node.id === connectionStart || node.id === id) &&
+          node.role === 'connector',
+      );
+      const kind: ConnectionKind =
+        connector?.connectorKind === 'hybrid'
+          ? 'hybrid'
+          : connector?.connectorKind === 'internet-gateway'
+            ? 'internet-gateway'
+            : connector?.connectorKind === 'vpc-endpoint'
+              ? 'vpc-endpoint'
+              : connector?.connectorKind === 'nat'
+                ? 'nat'
+                : 'data';
+      const label =
+        connectionKinds.find((item) => item.value === kind)?.label ??
+        'Data flow';
       setConnections((old) => [
         ...old,
         {
           id: connectionId,
           from: connectionStart,
           to: id,
-          kind: 'data',
-          label: 'Data flow',
+          kind,
+          label,
+          routing: 'elbow',
         },
       ]);
       setSaved(false);
@@ -602,16 +757,18 @@ export function ArchitectureEditor({
     void Promise.resolve(
       context.registerTool(
         {
-          name: 'add_aws_architecture_service',
-          title: 'Add AWS architecture service',
+          name: 'add_cloud_architecture_service',
+          title: 'Add cloud architecture service',
           description:
-            'Add one AWS service from the architecture catalog to the visible canvas.',
+            'Add one service from the active cloud provider catalog to the visible canvas.',
           inputSchema: {
             type: 'object',
             properties: {
               service: {
                 type: 'string',
-                enum: awsServices.map((item) => item.label),
+                enum: Array.from(
+                  new Set(availableServices.map((item) => item.label)),
+                ),
               },
             },
             required: ['service'],
@@ -620,7 +777,9 @@ export function ArchitectureEditor({
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute(input: unknown) {
             const name = (input as { service?: string })?.service;
-            const service = awsServices.find((item) => item.label === name);
+            const service = availableServices.find(
+              (item) => item.label === name,
+            );
             if (!service) throw new Error('Unsupported service');
             addService(service);
             return { status: 'added', service: service.label };
@@ -630,7 +789,7 @@ export function ArchitectureEditor({
       ),
     ).catch(() => {});
     return () => lifecycle.abort();
-  }, [addService]);
+  }, [addService, availableServices]);
 
   return (
     <main className="editor-shell">
@@ -757,127 +916,216 @@ export function ArchitectureEditor({
           </button>
         </div>
       )}
-      <div className="editor-body">
-        <aside className="service-library">
+      <div
+        className="editor-body"
+        style={
+          {
+            '--library-width': `${libraryCollapsed ? 46 : libraryWidth}px`,
+            '--properties-width': `${propertiesCollapsed ? 46 : propertiesWidth}px`,
+          } as CSSProperties
+        }
+      >
+        <aside
+          className={`service-library ${libraryCollapsed ? 'panel-collapsed' : ''}`}
+        >
           <div className="library-heading">
-            <strong>Architecture library</strong>
-            <small>
-              {awsServices.length} AWS services + network primitives
-            </small>
-          </div>
-          <div className="library-switch">
+            <div>
+              <strong>Architecture library</strong>
+              <small>
+                {availableServices.length} {provider} services + network
+                primitives
+              </small>
+            </div>
             <button
-              className={libraryMode === 'services' ? 'active' : ''}
-              onClick={() => setLibraryMode('services')}
+              className="panel-toggle"
+              onClick={() => setLibraryCollapsed((value) => !value)}
+              title={
+                libraryCollapsed
+                  ? 'Expand architecture library'
+                  : 'Collapse architecture library'
+              }
+              aria-label={
+                libraryCollapsed
+                  ? 'Expand architecture library'
+                  : 'Collapse architecture library'
+              }
             >
-              <Cloud /> Services
-            </button>
-            <button
-              className={libraryMode === 'network' ? 'active' : ''}
-              onClick={() => setLibraryMode('network')}
-            >
-              <SquareDashed /> Network
+              {libraryCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
             </button>
           </div>
-          {libraryMode === 'services' ? (
+          {!libraryCollapsed && (
             <>
-              <div className="library-search">
-                <Search />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search 320 AWS services"
-                />
-              </div>
-              <div className="category-select">
-                <select
-                  aria-label="Filter AWS services by category"
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                >
-                  {awsCategories.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-                <ChevronDown />
-              </div>
-              <div className="library-results-meta">
-                <span>{visibleServices.length} results</span>
+              <div className="library-switch">
                 <button
-                  onClick={() => {
-                    setQuery('');
-                    setCategory('All');
-                  }}
+                  className={libraryMode === 'services' ? 'active' : ''}
+                  onClick={() => setLibraryMode('services')}
                 >
-                  Clear
+                  <Cloud /> Services
+                </button>
+                <button
+                  className={libraryMode === 'network' ? 'active' : ''}
+                  onClick={() => setLibraryMode('network')}
+                >
+                  <SquareDashed /> Network
                 </button>
               </div>
-              <div className="palette-list catalog-list">
-                {visibleServices.map((item) => {
-                  const Icon = iconMap[item.icon];
-                  return (
-                    <button
-                      key={item.label}
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = 'copy';
-                        event.dataTransfer.setData(
-                          'application/cloudcraft',
-                          JSON.stringify({ kind: 'service', item }),
-                        );
-                      }}
-                      onClick={() => addService(item)}
+              {libraryMode === 'services' ? (
+                <>
+                  {provider === 'Multi-cloud' && (
+                    <div className="provider-tabs provider-tabs-hybrid">
+                      {(['All', 'AWS', 'Azure', 'GCP', 'Hybrid'] as const).map(
+                        (item) => (
+                          <button
+                            key={item}
+                            className={providerFilter === item ? 'active' : ''}
+                            onClick={() => {
+                              setProviderFilter(item);
+                              setCategory('All');
+                            }}
+                          >
+                            {item}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  )}
+                  <div className="library-search">
+                    <Search />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={`Search ${provider === 'Multi-cloud' ? 'all cloud' : provider} services`}
+                    />
+                  </div>
+                  <div className="category-select">
+                    <select
+                      aria-label="Filter cloud services by category"
+                      value={category}
+                      onChange={(event) => setCategory(event.target.value)}
                     >
-                      <span className={`palette-icon ${item.tone}`}>
-                        <Icon />
-                      </span>
-                      <span>
-                        <strong>{item.label}</strong>
-                        <small>{item.category}</small>
-                      </span>
-                      <Plus />
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="network-help">
-                Drag a Named Section to organize a workflow, or add network
-                boundaries for deployment detail. Every box and resource can be
-                connected with a labeled arrow.
-              </p>
-              <span className="eyebrow">BOUNDARIES & ROUTING</span>
-              <div className="palette-list network-list">
-                {infrastructure.map((item) => {
-                  const Icon = item.structure ? Layers3 : iconMap[item.icon];
-                  return (
+                      {serviceCategories.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                    <ChevronDown />
+                  </div>
+                  <div className="library-results-meta">
+                    <span>{visibleServices.length} results</span>
                     <button
-                      key={item.label}
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = 'copy';
-                        event.dataTransfer.setData(
-                          'application/cloudcraft',
-                          JSON.stringify({ kind: 'structure', item }),
-                        );
+                      onClick={() => {
+                        setQuery('');
+                        setCategory('All');
                       }}
-                      onClick={() => addStructure(item)}
                     >
-                      <span className={`palette-icon ${item.tone}`}>
-                        <Icon />
-                      </span>
-                      <span>
-                        <strong>{item.label}</strong>
-                        <small>{item.category}</small>
-                      </span>
-                      <Plus />
+                      Clear
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                  <div className="palette-list catalog-list">
+                    {visibleServices.map((item) => {
+                      const Icon = iconMap[item.icon];
+                      return (
+                        <button
+                          key={`${item.provider ?? provider}-${item.label}`}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = 'copy';
+                            event.dataTransfer.setData(
+                              'application/cloudcraft',
+                              JSON.stringify({ kind: 'service', item }),
+                            );
+                          }}
+                          onClick={() => addService(item)}
+                        >
+                          <span className={`palette-icon ${item.tone}`}>
+                            <Icon />
+                          </span>
+                          <span>
+                            <strong>{item.label}</strong>
+                            <small>
+                              {provider === 'Multi-cloud' && item.provider
+                                ? `${item.provider} · ${item.category}`
+                                : item.category}
+                            </small>
+                          </span>
+                          <Plus />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="network-help">
+                    Drag a Named Section to organize a workflow, or add network
+                    boundaries for deployment detail. Gateways, route tables,
+                    and VPC endpoints are connectors: place them between
+                    sections and join them with labeled arrows.
+                  </p>
+                  <span className="eyebrow">BOUNDARIES & ROUTING</span>
+                  <div className="palette-list network-list">
+                    {infrastructure.map((item) => {
+                      const Icon = item.structure
+                        ? Layers3
+                        : iconMap[item.icon];
+                      return (
+                        <button
+                          key={item.label}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = 'copy';
+                            event.dataTransfer.setData(
+                              'application/cloudcraft',
+                              JSON.stringify({ kind: 'structure', item }),
+                            );
+                          }}
+                          onClick={() => addStructure(item)}
+                        >
+                          <span className={`palette-icon ${item.tone}`}>
+                            <Icon />
+                          </span>
+                          <span>
+                            <strong>{item.label}</strong>
+                            <small>
+                              {item.connectorKind
+                                ? 'Connectable network path'
+                                : item.category}
+                            </small>
+                          </span>
+                          <Plus />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </>
+          )}
+          {!libraryCollapsed && (
+            <button
+              type="button"
+              className="panel-resizer library-resizer"
+              aria-label="Resize architecture library"
+              title="Drag to resize · Double-click to reset"
+              onDoubleClick={() => setLibraryWidth(310)}
+              onPointerDown={(event) => {
+                panelResizeRef.current = {
+                  side: 'library',
+                  startX: event.clientX,
+                  startWidth: libraryWidth,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  resizePanel(event.clientX);
+              }}
+              onPointerUp={() => {
+                panelResizeRef.current = null;
+              }}
+              onPointerCancel={() => {
+                panelResizeRef.current = null;
+              }}
+            />
           )}
         </aside>
         <section className="workspace">
@@ -893,23 +1141,25 @@ export function ArchitectureEditor({
               <MousePointer2 />
             </button>
             <button
-              className={connectMode ? 'active connect-active' : ''}
+              className={`arrow-tool ${connectMode ? 'active connect-active' : ''}`}
               onClick={() => {
                 setConnectMode((value) => !value);
                 setConnectionStart(null);
               }}
-              title="Connect resources"
+              title="Draw an arrow"
+              aria-label="Draw an arrow"
             >
-              <Share2 />
+              <MoveRight />
+              <b>Arrow</b>
             </button>
-            <span />
+            <span className="tool-separator" />
             <button disabled title="Undo">
               <Undo2 />
             </button>
             <button disabled title="Redo">
               <Redo2 />
             </button>
-            <span />
+            <span className="tool-separator" />
             <button title="Toggle grid">
               <Grid3X3 />
             </button>
@@ -917,8 +1167,8 @@ export function ArchitectureEditor({
           {connectMode && (
             <div className="connect-hint">
               {connectionStart
-                ? 'Select a destination'
-                : 'Select a service or subnet to start'}{' '}
+                ? 'Now select the destination for the arrow'
+                : 'Select a service, gateway, section, or subnet to start'}{' '}
               <button
                 onClick={() => {
                   setConnectMode(false);
@@ -945,8 +1195,8 @@ export function ArchitectureEditor({
                 <SquareDashed />
                 <strong>Start with a blank architecture</strong>
                 <span>
-                  Drag a named section, VPC, subnet, or AWS service here from
-                  the library.
+                  Drag a named section, network boundary, or cloud service here
+                  from the library.
                 </span>
                 <button
                   onClick={(event) => {
@@ -969,34 +1219,33 @@ export function ArchitectureEditor({
                   viewBox="0 0 10 10"
                   refX="9"
                   refY="5"
-                  markerWidth="6"
-                  markerHeight="6"
+                  markerWidth="9"
+                  markerHeight="9"
+                  markerUnits="userSpaceOnUse"
                   orient="auto-start-reverse"
                 >
                   <path d="M 0 0 L 10 5 L 0 10 z" />
                 </marker>
               </defs>
               {connections.map((line) => {
-                const from = endpointPoint(line.from);
-                const to = endpointPoint(line.to);
-                const midX = (from.x + to.x) / 2;
-                const midY = (from.y + to.y) / 2;
+                const geometry = connectionGeometry(line);
+                if (!geometry) return null;
                 return (
                   <g key={line.id}>
                     <path
                       className={`connection-line connection-${line.kind} ${selected === line.id ? 'selected' : ''}`}
-                      d={`M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
+                      d={geometry.path}
                       markerEnd="url(#arrow)"
                     />
                     <path
                       className="connection-hit"
-                      d={`M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
+                      d={geometry.path}
                       onClick={(event) => {
                         event.stopPropagation();
                         setSelected(line.id);
                       }}
                     />
-                    <text x={midX} y={midY - 8}>
+                    <text x={geometry.labelX} y={geometry.labelY}>
                       {line.label}
                     </text>
                   </g>
@@ -1016,8 +1265,14 @@ export function ArchitectureEditor({
                     height: `${group.h}%`,
                   }}
                   onPointerDown={(event) => {
-                    if (connectMode || event.target !== event.currentTarget)
+                    if (connectMode) {
+                      if (event.target === event.currentTarget) {
+                        event.stopPropagation();
+                        connectEndpoint(group.id);
+                      }
                       return;
+                    }
+                    if (event.target !== event.currentTarget) return;
                     event.preventDefault();
                     const point = canvasPoint(event.clientX, event.clientY);
                     groupDragRef.current = {
@@ -1137,11 +1392,11 @@ export function ArchitectureEditor({
               return (
                 <button
                   key={node.id}
-                  className={`editor-node ${selected === node.id ? 'selected' : ''} ${connectionStart === node.id ? 'connection-source' : ''}`}
+                  className={`editor-node ${node.role === 'connector' ? `network-connector connector-${node.connectorKind}` : ''} ${selected === node.id ? 'selected' : ''} ${connectionStart === node.id ? 'connection-source' : ''}`}
                   style={{
                     left: `${node.x}%`,
                     top: `${node.y}%`,
-                    width: `${96 * (node.size / 100)}px`,
+                    width: `${(node.role === 'connector' ? 132 : 96) * (node.size / 100)}px`,
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -1161,16 +1416,35 @@ export function ArchitectureEditor({
                   <span
                     className={`service-icon ${node.tone}`}
                     style={{
-                      width: `${48 * (node.size / 100)}px`,
-                      height: `${48 * (node.size / 100)}px`,
+                      width: `${(node.role === 'connector' ? 32 : 48) * (node.size / 100)}px`,
+                      height: `${(node.role === 'connector' ? 32 : 48) * (node.size / 100)}px`,
                     }}
                   >
                     <Icon />
                   </span>
-                  <strong style={{ fontSize: `${10 * (node.size / 100)}px` }}>
-                    {node.label}
-                  </strong>
-                  <small>{placementLabel}</small>
+                  <span className="node-copy">
+                    <strong style={{ fontSize: `${10 * (node.size / 100)}px` }}>
+                      {node.label}
+                    </strong>
+                    <small>
+                      {node.role === 'connector'
+                        ? 'Network connector'
+                        : placementLabel}
+                    </small>
+                  </span>
+                  {provider === 'Multi-cloud' && node.provider && (
+                    <span
+                      className={`node-provider provider-${node.provider.toLowerCase()}`}
+                    >
+                      {node.provider}
+                    </span>
+                  )}
+                  {connectMode && (
+                    <>
+                      <span className="node-port node-port-in" />
+                      <span className="node-port node-port-out" />
+                    </>
+                  )}
                   {selected === node.id && (
                     <span
                       className="node-resize-handle"
@@ -1229,16 +1503,36 @@ export function ArchitectureEditor({
             </button>
           </div>
         </section>
-        <aside className="properties-panel">
+        <aside
+          className={`properties-panel ${propertiesCollapsed ? 'panel-collapsed' : ''}`}
+        >
           <div className="properties-title">
-            <strong>Properties</strong>
-            {selected && (
-              <button onClick={removeSelected} title="Delete selected">
-                <Trash2 />
+            {!propertiesCollapsed && <strong>Properties</strong>}
+            <div className="panel-title-actions">
+              {!propertiesCollapsed && selected && (
+                <button onClick={removeSelected} title="Delete selected">
+                  <Trash2 />
+                </button>
+              )}
+              <button
+                className="panel-toggle"
+                onClick={() => setPropertiesCollapsed((value) => !value)}
+                title={
+                  propertiesCollapsed
+                    ? 'Expand properties'
+                    : 'Collapse properties'
+                }
+                aria-label={
+                  propertiesCollapsed
+                    ? 'Expand properties'
+                    : 'Collapse properties'
+                }
+              >
+                {propertiesCollapsed ? <PanelRightOpen /> : <PanelRightClose />}
               </button>
-            )}
+            </div>
           </div>
-          {selectedNode && (
+          {!propertiesCollapsed && selectedNode && (
             <div className="properties-content">
               <div className="selected-service">
                 <span className={`service-icon ${selectedNode.tone}`}>
@@ -1249,7 +1543,11 @@ export function ArchitectureEditor({
                 </span>
                 <div>
                   <strong>{selectedNode.label}</strong>
-                  <small>AWS · {selectedNode.category}</small>
+                  <small>
+                    {selectedNode.role === 'connector'
+                      ? 'Connectable network primitive'
+                      : `${selectedNode.provider ?? provider} · ${selectedNode.category}`}
+                  </small>
                 </div>
               </div>
               <label className="field-label" htmlFor="service-display-name">
@@ -1347,6 +1645,16 @@ export function ArchitectureEditor({
                 />
               </div>
               <Button
+                variant="outline"
+                onClick={() => {
+                  setConnectMode(true);
+                  setConnectionStart(selectedNode.id);
+                }}
+                className="full-button"
+              >
+                <MoveRight /> Start arrow here
+              </Button>
+              <Button
                 onClick={() => void persistDiagram(false)}
                 className="full-button"
                 disabled={saving}
@@ -1362,7 +1670,7 @@ export function ArchitectureEditor({
               </Button>
             </div>
           )}
-          {selectedGroup && (
+          {!propertiesCollapsed && selectedGroup && (
             <div className="properties-content">
               <div className="selected-service">
                 <span className={`service-icon ${selectedGroup.type}`}>
@@ -1508,7 +1816,7 @@ export function ArchitectureEditor({
               </Button>
             </div>
           )}
-          {selectedConnection && (
+          {!propertiesCollapsed && selectedConnection && (
             <div className="properties-content">
               <div className="selected-service connection-property-title">
                 <span
@@ -1566,6 +1874,31 @@ export function ArchitectureEditor({
                   }}
                 />
               </label>
+              <label className="field-label" htmlFor="connection-routing">
+                Arrow path
+                <select
+                  id="connection-routing"
+                  className="property-select"
+                  value={selectedConnection.routing ?? 'elbow'}
+                  onChange={(event) => {
+                    const routing = event.target.value as NonNullable<
+                      Connection['routing']
+                    >;
+                    setConnections((old) =>
+                      old.map((line) =>
+                        line.id === selectedConnection.id
+                          ? { ...line, routing }
+                          : line,
+                      ),
+                    );
+                    setSaved(false);
+                  }}
+                >
+                  <option value="elbow">Elbow (architecture diagram)</option>
+                  <option value="curved">Curved</option>
+                  <option value="straight">Straight</option>
+                </select>
+              </label>
               <div className="connection-endpoints">
                 <span>
                   {nodes.find((node) => node.id === selectedConnection.from)
@@ -1606,12 +1939,42 @@ export function ArchitectureEditor({
               </Button>
             </div>
           )}
-          {!selectedNode && !selectedGroup && !selectedConnection && (
-            <div className="properties-empty">
-              <MousePointer2 />
-              <strong>Select a canvas item</strong>
-              <span>Edit its name, placement, and connections.</span>
-            </div>
+          {!propertiesCollapsed &&
+            !selectedNode &&
+            !selectedGroup &&
+            !selectedConnection && (
+              <div className="properties-empty">
+                <MousePointer2 />
+                <strong>Select a canvas item</strong>
+                <span>Edit its name, placement, and connections.</span>
+              </div>
+            )}
+          {!propertiesCollapsed && (
+            <button
+              type="button"
+              className="panel-resizer properties-resizer"
+              aria-label="Resize properties panel"
+              title="Drag to resize · Double-click to reset"
+              onDoubleClick={() => setPropertiesWidth(300)}
+              onPointerDown={(event) => {
+                panelResizeRef.current = {
+                  side: 'properties',
+                  startX: event.clientX,
+                  startWidth: propertiesWidth,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  resizePanel(event.clientX);
+              }}
+              onPointerUp={() => {
+                panelResizeRef.current = null;
+              }}
+              onPointerCancel={() => {
+                panelResizeRef.current = null;
+              }}
+            />
           )}
         </aside>
       </div>

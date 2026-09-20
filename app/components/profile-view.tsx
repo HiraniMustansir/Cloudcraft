@@ -251,7 +251,7 @@ export function ProfileView({ username }: { username?: string }) {
                   >
                     Cancel
                   </Button>
-                  <Button>Save profile</Button>
+                  <Button type="submit">Save profile</Button>
                 </div>
               </form>
             )}

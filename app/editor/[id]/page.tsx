@@ -61,6 +61,7 @@ export default function EditorPage() {
     <ArchitectureEditor
       title={architecture.title}
       ownerLabel={`${profile?.display_name ?? 'Developer'} · ${architecture.provider}`}
+      provider={architecture.provider}
       status={architecture.status}
       initialDiagram={architecture.diagram}
       onClose={() => router.push(`/architectures/${architecture.id}`)}

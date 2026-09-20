@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Bookmark, GitFork, Heart, MessageCircle } from 'lucide-react';
 import { useAuth } from '@/app/providers';
+import { DiagramPreview } from '@/app/components/diagram-preview';
 import { toggleRelation } from '@/lib/cloudcraft-data';
 import type { Architecture } from '@/lib/cloudcraft-types';
 
@@ -46,15 +47,7 @@ export function ArchitectureCard({ item }: { item: Architecture }) {
   return (
     <article className="cc-architecture-card">
       <Link className="cc-card-preview" href={`/architectures/${item.id}`}>
-        <div className="cc-mini-boundary">
-          <span />
-          <span />
-          <span />
-          <span />
-          <i />
-          <i />
-          <i />
-        </div>
+        <DiagramPreview diagram={item.diagram} compact />
         <span className={`cc-provider ${providerTone[item.provider]}`}>
           {item.provider}
         </span>

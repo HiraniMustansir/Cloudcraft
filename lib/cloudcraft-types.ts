@@ -72,6 +72,14 @@ export type PullRequest = {
   author?: Profile;
 };
 
+export type ArchitectureFork = {
+  source_architecture_id: string;
+  fork_architecture_id: string;
+  author_id: string;
+  created_at: string;
+  author?: Profile;
+};
+
 export const emptyDiagram: DiagramDocument = {
   nodes: [],
   groups: [],
