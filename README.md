@@ -24,6 +24,20 @@ In Supabase, open **Authentication → URL Configuration** and add:
 
 New accounts created through the app are tagged with `account_type: developer` in Supabase Auth user metadata.
 
+### Create the application database
+
+1. Open **Supabase Dashboard → SQL Editor → New query**.
+2. Copy the complete contents of `supabase/migrations/001_cloudcraft.sql`.
+3. Paste it into the query editor and choose **Run**.
+
+The migration creates profiles, architectures, version history, follows, bookmarks, likes, comments, and pull requests. It also enables Row Level Security so public content is readable while changes remain restricted to their owners. Existing Auth users are automatically given profiles.
+
+After running it, restart the local app:
+
+```bash
+npm run dev
+```
+
 To test the production build locally:
 
 ```bash

@@ -1,10 +1,10 @@
 import { Suspense } from 'react';
 import { FeedPage } from '@/app/components/feed-page';
 
-export default function Home() {
+export default function SavedPage() {
   return (
     <Suspense>
-      <FeedPage mode="explore" />
+      <FeedPage mode="saved" />
     </Suspense>
   );
 }

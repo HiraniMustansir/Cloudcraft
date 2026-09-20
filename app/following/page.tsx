@@ -1,10 +1,10 @@
 import { Suspense } from 'react';
 import { FeedPage } from '@/app/components/feed-page';
 
-export default function Home() {
+export default function FollowingPage() {
   return (
     <Suspense>
-      <FeedPage mode="explore" />
+      <FeedPage mode="following" />
     </Suspense>
   );
 }

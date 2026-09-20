@@ -111,6 +111,8 @@ The prototype now includes a searchable catalog of 320 AWS services across 21 ca
 
 The reference image informs the MVP’s use of nested account boundaries, labeled horizontal/vertical service lanes, directional connections, and color-coded provider services. The product should preserve those information-design strengths while reducing label density and improving editability.
 
+The implemented application now connects Supabase Auth to durable profiles and product data. Its end-to-end MVP includes an Explore feed, full-text-style architecture search, author profiles, editable profile metadata, publishing and private drafts, diagram version saves, public detail pages, likes, bookmarks, following feeds, comments, forks, and pull-request review. Supabase Row Level Security restricts writes to authenticated owners and keeps private drafts visible only to their authors.
+
 ### 6.5 Discussion and feedback
 
 - Post-level threaded comments.

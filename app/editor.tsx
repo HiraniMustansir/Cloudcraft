@@ -54,6 +54,7 @@ import {
   type CloudService,
   type ServiceIcon,
 } from './aws-services';
+import type { DiagramDocument } from '@/lib/cloudcraft-types';
 
 type NodeData = CloudService & {
   id: string;
@@ -223,11 +224,41 @@ declare global {
   }
 }
 
-export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
-  const [nodes, setNodes] = useState<NodeData[]>(starterNodes);
-  const [groups, setGroups] = useState<GroupData[]>(starterGroups);
-  const [connections, setConnections] =
-    useState<Connection[]>(starterConnections);
+type ArchitectureEditorProps = {
+  onClose: () => void;
+  title?: string;
+  ownerLabel?: string;
+  status?: 'draft' | 'published';
+  initialDiagram?: DiagramDocument;
+  onSave?: (diagram: DiagramDocument) => Promise<void>;
+  onPublish?: (diagram: DiagramDocument) => Promise<void>;
+  onSubmitPullRequest?: (input: {
+    title: string;
+    description: string;
+    diagram: DiagramDocument;
+  }) => Promise<void>;
+};
+
+export function ArchitectureEditor({
+  onClose,
+  title = 'Production topology',
+  ownerLabel = 'Your architecture',
+  status = 'draft',
+  initialDiagram,
+  onSave,
+  onPublish,
+  onSubmitPullRequest,
+}: ArchitectureEditorProps) {
+  const [nodes, setNodes] = useState<NodeData[]>(
+    (initialDiagram?.nodes as NodeData[] | undefined) ?? starterNodes,
+  );
+  const [groups, setGroups] = useState<GroupData[]>(
+    (initialDiagram?.groups as GroupData[] | undefined) ?? starterGroups,
+  );
+  const [connections, setConnections] = useState<Connection[]>(
+    (initialDiagram?.connections as Connection[] | undefined) ??
+      starterConnections,
+  );
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
@@ -240,6 +271,11 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
   const [connectionStart, setConnectionStart] = useState<string | null>(null);
   const [prOpen, setPrOpen] = useState(false);
   const [prSent, setPrSent] = useState(false);
+  const [prTitle, setPrTitle] = useState('Improve architecture design');
+  const [prDescription, setPrDescription] = useState('');
+  const [prSubmitting, setPrSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const canvasRef = useRef<HTMLDivElement>(null);
   const groupDragRef = useRef<{
     id: string;
@@ -270,6 +306,28 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
   const selectedNode = nodes.find((node) => node.id === selected);
   const selectedGroup = groups.find((group) => group.id === selected);
   const selectedConnection = connections.find((line) => line.id === selected);
+
+  const diagram = (): DiagramDocument => ({
+    nodes,
+    groups,
+    connections,
+  });
+
+  const persistDiagram = async (publish = false) => {
+    setSaving(true);
+    setSaveError('');
+    try {
+      if (publish && onPublish) await onPublish(diagram());
+      else if (onSave) await onSave(diagram());
+      setSaved(true);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : 'Could not save architecture.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const canvasPoint = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -585,8 +643,8 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
           <ArrowLeft />
         </button>
         <div className="editor-title">
-          <strong>Production topology</strong>
-          <span>Alex Kim / commerce-resilience</span>
+          <strong>{title}</strong>
+          <span>{ownerLabel}</span>
         </div>
         <span className="branch-pill">main</span>
         <span className={`save-state ${saved ? 'saved' : ''}`}>
@@ -599,55 +657,102 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
           )}
         </span>
         <div className="editor-spacer" />
-        <Button variant="outline">
+        <Button
+          variant="outline"
+          onClick={() =>
+            void navigator.clipboard.writeText(window.location.href)
+          }
+        >
           <Share2 /> Share
         </Button>
-        <Dialog open={prOpen} onOpenChange={setPrOpen}>
-          <DialogTrigger render={<Button />}>
-            <GitPullRequest /> Create pull request
-          </DialogTrigger>
-          <DialogContent className="pr-dialog">
-            <DialogHeader>
-              <DialogTitle>Propose your architecture changes</DialogTitle>
-              <DialogDescription>
-                The original author will see your network boundaries, service
-                placement, and new connections.
-              </DialogDescription>
-            </DialogHeader>
-            <label className="field-label" htmlFor="pr-title">
-              Title
-              <Input
-                id="pr-title"
-                defaultValue="Add private application and data subnets"
-              />
-            </label>
-            <label className="field-label" htmlFor="pr-description">
-              What changed?
-              <Textarea
-                id="pr-description"
-                defaultValue="Separated internet-facing resources from private compute and data tiers, with controlled outbound access through a NAT gateway."
-              />
-            </label>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPrOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setPrSent(true);
-                  setPrOpen(false);
-                }}
-              >
-                Submit pull request
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button
+          variant="outline"
+          disabled={saving || (saved && Boolean(onSave))}
+          onClick={() => void persistDiagram(false)}
+        >
+          <Save /> {saving ? 'Saving…' : 'Save version'}
+        </Button>
+        {onPublish && status === 'draft' && (
+          <Button disabled={saving} onClick={() => void persistDiagram(true)}>
+            <Cloud /> Publish
+          </Button>
+        )}
+        {onSubmitPullRequest && (
+          <Dialog open={prOpen} onOpenChange={setPrOpen}>
+            <DialogTrigger render={<Button />}>
+              <GitPullRequest /> Create pull request
+            </DialogTrigger>
+            <DialogContent className="pr-dialog">
+              <DialogHeader>
+                <DialogTitle>Propose your architecture changes</DialogTitle>
+                <DialogDescription>
+                  The original author will see your network boundaries, service
+                  placement, and new connections.
+                </DialogDescription>
+              </DialogHeader>
+              <label className="field-label" htmlFor="pr-title">
+                Title
+                <Input
+                  id="pr-title"
+                  value={prTitle}
+                  onChange={(event) => setPrTitle(event.target.value)}
+                />
+              </label>
+              <label className="field-label" htmlFor="pr-description">
+                What changed?
+                <Textarea
+                  id="pr-description"
+                  value={prDescription}
+                  onChange={(event) => setPrDescription(event.target.value)}
+                  placeholder="Explain the architecture changes and why they improve the design."
+                />
+              </label>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPrOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={prSubmitting || prTitle.trim().length < 3}
+                  onClick={() => {
+                    setPrSubmitting(true);
+                    void onSubmitPullRequest({
+                      title: prTitle.trim(),
+                      description: prDescription.trim(),
+                      diagram: diagram(),
+                    })
+                      .then(() => {
+                        setPrSent(true);
+                        setPrOpen(false);
+                      })
+                      .catch((error: unknown) =>
+                        setSaveError(
+                          error instanceof Error
+                            ? error.message
+                            : 'Could not submit pull request.',
+                        ),
+                      )
+                      .finally(() => setPrSubmitting(false));
+                  }}
+                >
+                  {prSubmitting ? 'Submitting…' : 'Submit pull request'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </header>
       {prSent && (
         <div className="success-banner">
           <Check /> Pull request #19 submitted for review.
           <button onClick={() => setPrSent(false)} aria-label="Dismiss">
+            <X />
+          </button>
+        </div>
+      )}
+      {saveError && (
+        <div className="success-banner error-banner">
+          {saveError}
+          <button onClick={() => setSaveError('')} aria-label="Dismiss">
             <X />
           </button>
         </div>
@@ -1241,7 +1346,11 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
                   }}
                 />
               </div>
-              <Button onClick={() => setSaved(true)} className="full-button">
+              <Button
+                onClick={() => void persistDiagram(false)}
+                className="full-button"
+                disabled={saving}
+              >
                 <Save /> Save version
               </Button>
               <Button
