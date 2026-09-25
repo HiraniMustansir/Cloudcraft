@@ -1,9 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Bookmark, Compass, Layers3, Radio, Search, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  Bookmark,
+  Boxes,
+  Building2,
+  Compass,
+  Database,
+  GitFork,
+  Layers3,
+  Radio,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Workflow,
+} from 'lucide-react';
 import { AppHeader } from '@/app/components/app-header';
 import { ArchitectureCard } from '@/app/components/architecture-card';
 import { useAuth } from '@/app/providers';
@@ -13,6 +28,36 @@ import {
 } from '@/lib/cloudcraft-data';
 import type { Architecture, FollowedProfile } from '@/lib/cloudcraft-types';
 import { Button } from '@/components/ui/button';
+import { analyzeArchitecture } from '@/lib/architecture-analysis';
+
+const providers = [
+  'All providers',
+  'AWS',
+  'Azure',
+  'GCP',
+  'Multi-cloud',
+] as const;
+const patterns = [
+  {
+    label: 'Secure web applications',
+    query: 'security',
+    icon: ShieldCheck,
+    tone: 'green',
+  },
+  {
+    label: 'Event-driven systems',
+    query: 'event-driven',
+    icon: Workflow,
+    tone: 'purple',
+  },
+  { label: 'Data & analytics', query: 'data', icon: Database, tone: 'blue' },
+  {
+    label: 'Platform foundations',
+    query: 'platform',
+    icon: Building2,
+    tone: 'amber',
+  },
+];
 
 export function FeedPage({
   mode,
@@ -28,6 +73,11 @@ export function FeedPage({
   );
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [provider, setProvider] =
+    useState<(typeof providers)[number]>('All providers');
+  const [sort, setSort] = useState<
+    'Recommended' | 'Newest' | 'Most discussed' | 'Health score'
+  >('Recommended');
 
   /* oxlint-disable react/react-compiler -- Route data is synchronized after auth resolves. */
   useEffect(() => {
@@ -82,12 +132,49 @@ export function FeedPage({
     },
   }[mode];
   const Icon = copy.icon;
+  const visibleItems = useMemo(() => {
+    const filtered =
+      provider === 'All providers'
+        ? [...items]
+        : items.filter((item) => item.provider === provider);
+    return filtered.sort((a, b) => {
+      if (sort === 'Newest')
+        return (
+          +new Date(b.published_at ?? b.updated_at) -
+          +new Date(a.published_at ?? a.updated_at)
+        );
+      if (sort === 'Most discussed')
+        return (b.comment_count ?? 0) - (a.comment_count ?? 0);
+      if (sort === 'Health score')
+        return (
+          analyzeArchitecture(b.diagram, b.provider).score -
+          analyzeArchitecture(a.diagram, a.provider).score
+        );
+      return (
+        (b.like_count ?? 0) +
+        (b.comment_count ?? 0) * 3 -
+        ((a.like_count ?? 0) + (a.comment_count ?? 0) * 3)
+      );
+    });
+  }, [items, provider, sort]);
+
+  const averageScore = items.length
+    ? Math.round(
+        items.reduce(
+          (total, item) =>
+            total + analyzeArchitecture(item.diagram, item.provider).score,
+          0,
+        ) / items.length,
+      )
+    : 0;
 
   return (
     <main className="cc-app">
       <AppHeader />
       <section className="cc-feed-shell">
-        <div className="cc-feed-heading">
+        <div
+          className={`cc-feed-heading ${mode === 'explore' ? 'cc-explore-heading' : ''}`}
+        >
           <span className="cc-heading-icon">
             <Icon />
           </span>
@@ -96,6 +183,11 @@ export function FeedPage({
             <h1>{copy.title}</h1>
             <p>{copy.description}</p>
           </div>
+          {mode === 'explore' && (
+            <Link className="cc-heading-action" href="/publish">
+              Start an architecture <ArrowRight />
+            </Link>
+          )}
         </div>
         {needsSetup && (
           <div className="cc-setup-banner">
@@ -104,6 +196,119 @@ export function FeedPage({
               Run <code>supabase/migrations/001_cloudcraft.sql</code> in the
               Supabase SQL Editor. Demo architectures are shown until then.
             </span>
+          </div>
+        )}
+        {mode === 'explore' && !query && (
+          <>
+            <div className="cc-workbench-summary">
+              <article>
+                <span>
+                  <Boxes />
+                </span>
+                <div>
+                  <strong>{items.length}</strong>
+                  <small>published designs</small>
+                </div>
+              </article>
+              <article>
+                <span>
+                  <ShieldCheck />
+                </span>
+                <div>
+                  <strong>{averageScore || '—'}</strong>
+                  <small>average health score</small>
+                </div>
+              </article>
+              <article>
+                <span>
+                  <GitFork />
+                </span>
+                <div>
+                  <strong>
+                    {items.filter((item) => item.forked_from).length}
+                  </strong>
+                  <small>community remixes</small>
+                </div>
+              </article>
+              <article className="cc-summary-note">
+                <Sparkles />
+                <p>
+                  <strong>Architecture intelligence</strong> checks every design
+                  across six well-architected pillars.
+                </p>
+              </article>
+            </div>
+            <section
+              className="cc-pattern-section"
+              aria-labelledby="pattern-heading"
+            >
+              <div className="cc-section-title">
+                <div>
+                  <span>REFERENCE PATTERNS</span>
+                  <h2 id="pattern-heading">
+                    Start from a proven workload shape
+                  </h2>
+                </div>
+                <small>
+                  Curated entry points for common architecture decisions
+                </small>
+              </div>
+              <div className="cc-pattern-grid">
+                {patterns.map((pattern) => {
+                  const PatternIcon = pattern.icon;
+                  return (
+                    <Link
+                      href={`/?q=${encodeURIComponent(pattern.query)}`}
+                      key={pattern.label}
+                      className={`cc-pattern-card ${pattern.tone}`}
+                    >
+                      <span>
+                        <PatternIcon />
+                      </span>
+                      <strong>{pattern.label}</strong>
+                      <small>Explore designs</small>
+                      <ArrowRight />
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
+        {mode === 'explore' && (
+          <div className="cc-library-toolbar">
+            <div>
+              <span>ARCHITECTURE LIBRARY</span>
+              <strong>
+                {query ? `Matches for “${query}”` : 'Community designs'}
+              </strong>
+            </div>
+            <div
+              className="cc-provider-filters"
+              aria-label="Filter by provider"
+            >
+              {providers.map((item) => (
+                <button
+                  key={item}
+                  className={provider === item ? 'active' : ''}
+                  onClick={() => setProvider(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            <label className="cc-sort-control">
+              <span>Sort</span>
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value as typeof sort)}
+              >
+                <option>Recommended</option>
+                <option>Newest</option>
+                <option>Most discussed</option>
+                <option>Health score</option>
+              </select>
+            </label>
           </div>
         )}
         <div
@@ -177,9 +382,9 @@ export function FeedPage({
                   <div className="cc-card-skeleton" key={item} />
                 ))}
               </div>
-            ) : items.length ? (
+            ) : visibleItems.length ? (
               <div className="cc-card-grid">
-                {items.map((item) => (
+                {visibleItems.map((item) => (
                   <ArchitectureCard item={item} key={item.id} />
                 ))}
               </div>

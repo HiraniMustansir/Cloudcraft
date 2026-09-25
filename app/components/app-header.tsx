@@ -60,6 +60,7 @@ export function AppHeader() {
           <Cloud />
         </span>
         <span>Cloudcraft</span>
+        <small>Collective</small>
       </Link>
       <nav className="cc-nav" aria-label="Primary navigation">
         <Link className={pathname === '/' ? 'active' : ''} href="/">
@@ -86,7 +87,7 @@ export function AppHeader() {
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search architectures"
+          placeholder="Search patterns, services, architects"
           aria-label="Search architectures"
         />
         <kbd>↵</kbd>
@@ -108,7 +109,7 @@ export function AppHeader() {
           )}
         </div>
         <Button onClick={publish} className="cc-publish">
-          <Plus /> Publish
+          <Plus /> New design
         </Button>
         <div className="cc-popover-wrap" ref={accountRef}>
           <button

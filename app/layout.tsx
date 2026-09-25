@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Cloudcraft Collective',
+  title: 'Cloudcraft Collective — Architecture Registry',
   description:
-    'Publish, remix, and improve cloud architecture with your peers.',
+    'Design, review, version, and share cloud architecture with practitioners.',
 };
 
 export default function RootLayout({

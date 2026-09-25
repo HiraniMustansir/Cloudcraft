@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   Bookmark,
+  Boxes,
   GitFork,
   Heart,
   MessageCircle,
@@ -85,6 +86,17 @@ export function ArchitectureCard({ item }: { item: Architecture }) {
           {item.title}
         </Link>
         <p>{item.summary}</p>
+        <div className="cc-card-signals" aria-label="Architecture summary">
+          <span>
+            <Boxes /> {analysis.inventory.services} services
+          </span>
+          <span>{analysis.complexity} complexity</span>
+          <span
+            className={`status-${analysis.status.toLowerCase().replaceAll(' ', '-')}`}
+          >
+            {analysis.status}
+          </span>
+        </div>
         <div className="cc-tags">
           {item.tags.slice(0, 3).map((tag) => (
             <Link href={`/?q=${encodeURIComponent(tag)}`} key={tag}>

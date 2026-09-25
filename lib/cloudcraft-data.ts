@@ -13,6 +13,7 @@ import {
   type Provider,
   type PullRequest,
 } from '@/lib/cloudcraft-types';
+import { getArchitectureTemplates } from '@/lib/architecture-templates';
 
 const demoAuthor: Profile = {
   id: 'demo-author',
@@ -39,7 +40,7 @@ export const demoArchitectures: Architecture[] = [
       'The event boundary improves resilience but adds eventual consistency, operational observability requirements, and replay handling.',
     provider: 'AWS',
     tags: ['event-driven', 'commerce', 'resilience'],
-    diagram: emptyDiagram,
+    diagram: getArchitectureTemplates('AWS')[1].diagram,
     status: 'published',
     forked_from: null,
     created_at: '2026-09-10T10:00:00.000Z',
@@ -61,7 +62,7 @@ export const demoArchitectures: Architecture[] = [
     tradeoffs: 'Operational simplicity comes with careful concurrency tuning.',
     provider: 'AWS',
     tags: ['serverless', 'data', 'kinesis'],
-    diagram: emptyDiagram,
+    diagram: getArchitectureTemplates('AWS')[2].diagram,
     status: 'published',
     forked_from: null,
     created_at: '2026-09-02T10:00:00.000Z',
@@ -82,7 +83,7 @@ export const demoArchitectures: Architecture[] = [
     tradeoffs: 'Portability increases governance and testing overhead.',
     provider: 'Multi-cloud',
     tags: ['multi-cloud', 'networking', 'failover'],
-    diagram: emptyDiagram,
+    diagram: getArchitectureTemplates('Multi-cloud')[3].diagram,
     status: 'published',
     forked_from: null,
     created_at: '2026-08-27T10:00:00.000Z',
